@@ -5,6 +5,7 @@ A curated collection of specialized GitHub Copilot skills designed to enhance AI
 ## 📚 Available Skills
 
 ### API & Testing
+
 - **[API Test Scenario Generator](.github/skills/api-test-scenario-generator/)** - Generate comprehensive API test scenarios with boundary analysis and validation testing
 - **[Token Usage Reporting](.github/skills/token-usage-reporting/)** - Generate detailed token usage reports for API consumption tracking
 
@@ -25,7 +26,7 @@ Each skill follows a standardized structure:
 ├── SKILL.md          # Main skill definition with YAML frontmatter
 ├── README.md         # Comprehensive documentation
 ├── config/           # Configuration files and settings
-├── scripts/          # Helper scripts and utilities  
+├── scripts/          # Helper scripts and utilities
 ├── templates/        # Reusable templates and examples
 └── examples/         # Usage examples and demonstrations
 ```
@@ -44,6 +45,7 @@ description: Brief description of skill capabilities
 ```
 
 The skill file includes:
+
 - **Name & Description**: Clear identification and purpose
 - **Features**: Key capabilities and benefits
 - **Usage**: Command formats and invocation patterns
@@ -62,7 +64,7 @@ The skill file includes:
 
 ### Skill Best Practices
 
-- **Domain Expertise**: Each skill should focus on a specific area of expertise  
+- **Domain Expertise**: Each skill should focus on a specific area of expertise
 - **Proven Methods**: Include tested workflows and methodologies
 - **Clear Instructions**: Provide unambiguous usage guidance
 - **Practical Examples**: Include real-world scenarios and demonstrations
@@ -93,7 +95,7 @@ Contributions are welcome! To add a new skill:
 ### Contribution Guidelines
 
 - **Quality Focus**: Ensure skills provide genuine value and expertise
-- **Documentation**: Include thorough documentation and examples  
+- **Documentation**: Include thorough documentation and examples
 - **Testing**: Validate skills work effectively with GitHub Copilot
 - **Consistency**: Follow established patterns and conventions
 
