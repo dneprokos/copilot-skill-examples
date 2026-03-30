@@ -14,6 +14,7 @@ Each skill in this repository targets a specific workflow:
 | [`api-test-scenario-generator`](.github/skills/api-test-scenario-generator/) | Generates structured REST API test scenarios with boundary and validation coverage | `SKILL.md`, templates, config, script       |
 | [`git-branch-creator`](.github/skills/git-branch-creator/)                   | Creates a new Git branch after checking that `main` is ready and up to date        | `SKILL.md`, README, script                  |
 | [`git-commit-creator`](.github/skills/git-commit-creator/)                   | Creates a commit on the current branch from collected git changes                  | `SKILL.md`, README, references, script      |
+| [`git-pr-creator`](.github/skills/git-pr-creator/)                           | Creates a pull request from the current branch and handles ticket-style PR titles  | `SKILL.md`, README, references, script      |
 | [`git-push-creator`](.github/skills/git-push-creator/)                       | Pushes the current local branch to `origin` using the same branch name             | `SKILL.md`, README, script                  |
 | [`readme-polisher`](.github/skills/readme-polisher/)                         | Helps draft or improve a repository `README.md` using real project evidence        | `SKILL.md`, references, assets, scan script |
 | [`token-usage-reporting`](.github/skills/token-usage-reporting/)             | Produces day/week/month token usage reports in table format                        | `SKILL.md`, config, template, script        |
@@ -40,6 +41,7 @@ Generate API test scenarios for POST /api/users.
 Create a new branch named feature/add-login-flow.
 Commit the current branch using the git-commit-creator skill.
 Push the current branch using the git-push-creator skill.
+Create a pull request from this branch using the git-pr-creator skill.
 Create a token usage report for this week.
 ```
 
@@ -66,6 +68,7 @@ copilot-skill-examples/
 │       ├── api-test-scenario-generator/
 │       ├── git-branch-creator/
 │       ├── git-commit-creator/
+│       ├── git-pr-creator/
 │       ├── git-push-creator/
 │       ├── readme-polisher/
 │       └── token-usage-reporting/
