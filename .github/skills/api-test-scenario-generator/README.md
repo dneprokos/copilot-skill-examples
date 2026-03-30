@@ -1,146 +1,99 @@
 # API Test Scenario Generator
 
-A comprehensive VS Code agent skill for generating structured API test scenarios based on HTTP methods and endpoints.
+A GitHub Copilot skill for producing API scenario specs from an HTTP method, endpoint, and optional domain hints.
 
 ## Quick Start
 
-Use the skill with this command format:
-
-```
-/api-test-scenario-generator POST /api/users
-```
-
-This will generate a comprehensive test scenario table covering:
-
-- ✅ Happy path scenarios
-- ✅ Boundary and edge cases
-- ✅ Negative test cases
-- ✅ Security testing
-- ✅ Performance scenarios
-
-## Features
-
-### 🎯 Comprehensive Coverage
-
-- **Happy Path**: Normal successful operations
-- **Boundary**: Edge cases and limit testing
-- **Negative**: Error conditions and invalid inputs
-- **Security**: Authentication, authorization, and input sanitization
-- **Performance**: Load testing and rate limiting scenarios
-
-### 📊 Testing Pyramid Application
-
-- Balances unit (70%), integration (20%), and E2E (10%) test scenarios
-- Prioritizes scenarios by importance (H/M/L)
-- Applies boundary analysis techniques
-
-### 📋 Structured Output
-
-Generated scenarios include:
-
-- Scenario name and classification
-- Detailed test description
-- Expected results
-- HTTP status codes
-- Priority levels
-
-## Example Usage
-
-```bash
-# Basic endpoint
-/api-test-scenario-generator GET /api/users
-
-# Resource endpoint with path parameter
-/api-test-scenario-generator PUT /api/users/{id}
-
-# Complex endpoint
-/api-test-scenario-generator POST /api/orders/{orderId}/items
+```text
+/api-test-scenario-generator POST /api/orders \
+  --fields amount:number:>=0,status:enum:PENDING|CONFIRMED|CANCELLED \
+  --states PENDING,CONFIRMED,SHIPPED,DELIVERED,CANCELLED \
+  --transitions PENDING:CONFIRMED,CONFIRMED:SHIPPED,SHIPPED:DELIVERED \
+  --filters status:string,createdAt:date \
+  --sortable createdAt,totalAmount \
+  --relations user:owner-must-exist
 ```
 
-## Generated Table Format
+If you do not supply these hints, the skill falls back to HTTP conventions and common API knowledge, then records any assumptions under warnings.
 
-| Scenario                | Test Type  | Description                                          | Expected Result               | HTTP Status | Priority |
-| ----------------------- | ---------- | ---------------------------------------------------- | ----------------------------- | ----------- | -------- |
-| Create new resource     | Happy Path | POST /api/users with valid data creates new resource | Resource created successfully | 201         | H        |
-| Missing required fields | Negative   | POST /api/users with missing required fields         | Validation error              | 422         | H        |
-| Invalid authentication  | Security   | POST /api/users with invalid or expired token        | Authentication failed error   | 401         | H        |
+## What it covers
 
-## Files Structure
+- ✅ happy path, validation, and edge cases
+- ✅ RBAC and auth flows, including expired JWT and refresh expectations
+- ✅ filtering, sorting, pagination, and date-range queries
+- ✅ state transitions and lifecycle checks
+- ✅ idempotency and duplicate-write protection
+- ✅ referential integrity and cascade behavior
+- ✅ error-response contract verification
+- ✅ protocol and operational errors such as `405`, `415`, `429`, `502`, and `503`
 
+## Output
+
+Generated documents include:
+
+- a scenario table with `Priority` and `Recommended Test Level`
+- a clear legend: `High (H) > Medium (M) > Low (L)`
+- an optional dependency graph when prerequisite resources are required
+- a warnings section for unknown or inferred behavior
+
+### Example dependency graph
+
+```json
+{
+  "nodes": ["create_user", "update_user", "delete_user"],
+  "edges": [
+    { "from": "create_user", "to": "update_user" },
+    { "from": "create_user", "to": "delete_user" }
+  ]
+}
 ```
+
+## Priority and test-level guidance
+
+- **High (H)** = business-critical, auth, destructive, money, or data-integrity scenarios
+- **Medium (M)** = important validation and common negative checks
+- **Low (L)** = optional or rarer operational checks
+
+The skill assigns these priorities as a starting point, and reviewers can override them. The testing pyramid split is also a heuristic, not a hard quota.
+
+## Supported context flags
+
+```text
+--fields      name:type:constraint,...
+--states      STATE1,STATE2,...
+--transitions FROM:TO,...
+--filters     name:type,...
+--sortable    field1,field2,...
+--relations   resource:policy,...
+```
+
+Use them when the endpoint depends on domain rules that cannot be safely inferred from the path alone.
+
+## Supported HTTP methods
+
+- `GET`, `POST`, `PUT`, `PATCH`, `DELETE`
+- `HEAD`, `OPTIONS` when the contract exposes them
+
+## Files
+
+```text
 .github/skills/api-test-scenario-generator/
-├── SKILL.md                    # Main skill definition
-├── README.md                   # This documentation
+├── SKILL.md
+├── README.md
 ├── templates/
-│   ├── scenario-table.md       # Table format template
-│   └── full-report.md         # Full report template
+│   ├── scenario-table.md
+│   └── full-report.md
 ├── config/
-│   ├── validation-rules.json  # Input validation patterns
-│   └── test-types.json        # Test classifications
+│   ├── validation-rules.json
+│   └── test-types.json
 └── scripts/
-    └── generate-scenarios.js  # Main generation script
+    └── generate-scenarios.js
 ```
 
-## Configuration
+## Implementation tips
 
-### Validation Rules (`config/validation-rules.json`)
-
-- Input validation patterns for different data types
-- HTTP method configurations and expected status codes
-- Authentication types and error codes
-
-### Test Types (`config/test-types.json`)
-
-- Test type definitions and priorities
-- Testing pyramid level configurations
-- Category classifications
-
-## Test the Skill
-
-Try it with a simple API endpoint:
-
-```
-/api-test-scenario-generator POST /api/flowsheets
-```
-
-This should generate comprehensive test scenarios including create operations, validation testing, security checks, and error handling.
-
-## Implementation Tips
-
-When using the generated scenarios in your tests:
-
-1. **Prioritize by importance**: Implement H → M → L priority scenarios
-2. **Use test builders**: Create data factories for consistent test data
-3. **Group related tests**: Organize scenarios into logical test suites
-4. **Mock dependencies**: Use mocks for external services in unit tests
-5. **Test isolation**: Use database transactions or cleanup for test isolation
-
-## Supported HTTP Methods
-
-- **GET**: Retrieval operations with pagination, filtering, and error cases
-- **POST**: Creation operations with validation and conflict scenarios
-- **PUT**: Full update operations with idempotency testing
-- **PATCH**: Partial update operations with field validation
-- **DELETE**: Removal operations with dependency checking
-
-## Architecture
-
-The skill uses pattern recognition to identify common API patterns:
-
-- Collection vs. resource endpoints
-- Path parameter extraction
-- CRUD operation mapping
-- REST convention adherence
-
-Generated scenarios follow testing best practices:
-
-- Boundary value analysis
-- Equivalence partitioning
-- Error condition coverage
-- Security testing principles
-
----
-
-**Ready to generate comprehensive API test scenarios!** 🚀
-
-Use `/api-test-scenario-generator {METHOD} {ENDPOINT}` to get started.
+1. Cover `High (H)` scenarios first.
+2. Prefer unit tests for validation rules and pure business logic.
+3. Use integration tests for auth, RBAC, state changes, and error contracts.
+4. Keep E2E coverage focused on a few cross-system flows.
+5. Treat missing context as a warning, not a guess.

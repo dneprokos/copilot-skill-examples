@@ -10,17 +10,23 @@ Generated on: {{DATE}}
 
 {{SCENARIO_TABLE}}
 
+{{DEPENDENCY_GRAPH_SECTION}}
+
 ## Notes
 
-- **Recommended Test Level**: Unit (70%), Integration (20%), E2E (10%) following testing pyramid
-- **Test Type**: Classification based on testing pyramid and scenario type
+- **Priority**: `High (H) > Medium (M) > Low (L)` and is assigned by the generator as a starting point based on risk and business impact
+- **Recommended Test Level**: Use the testing pyramid as a heuristic, not a fixed quota
 - **HTTP Status**: Expected response code for each scenario
 
 ## Testing Pyramid Guidelines
 
-- **Unit Tests**: Fast validation, boundary cases, error conditions - bulk of test suite
-- **Integration Tests**: API contracts, authentication, happy paths - moderate coverage
-- **E2E Tests**: Critical user journeys only - minimal but essential coverage
+- **Unit Tests**: Fast validation, boundary cases, and pure business-rule checks
+- **Integration Tests**: API contracts, authentication, RBAC, persistence, and service interactions
+- **E2E Tests**: A small set of critical cross-system journeys only
+
+## Warnings and Assumptions
+
+{{WARNINGS_SECTION}}
 
 ## Implementation Tips
 

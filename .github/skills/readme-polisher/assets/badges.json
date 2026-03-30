@@ -1,0 +1,16 @@
+{
+  "style": "flat-square",
+  "badges": {
+    "license": "https://img.shields.io/github/license/{{OWNER}}/{{REPO}}?style=flat-square",
+    "stars": "https://img.shields.io/github/stars/{{OWNER}}/{{REPO}}?style=flat-square",
+    "workflow": "https://img.shields.io/github/actions/workflow/status/{{OWNER}}/{{REPO}}/{{WORKFLOW_FILE}}?style=flat-square&label=build",
+    "npm": "https://img.shields.io/npm/v/{{PACKAGE_NAME}}?style=flat-square",
+    "pypi": "https://img.shields.io/pypi/v/{{PACKAGE_NAME}}?style=flat-square",
+    "docker": "https://img.shields.io/docker/image-size/{{IMAGE_NAME}}/latest?style=flat-square"
+  },
+  "rules": [
+    "Use only badges backed by confirmed repo metadata.",
+    "Prefer a small, consistent set over a crowded badge row.",
+    "Skip package badges if the project is not published."
+  ]
+}

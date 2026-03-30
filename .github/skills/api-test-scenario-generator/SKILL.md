@@ -1,133 +1,145 @@
 ---
 name: api-test-scenario-generator
-description: Generate comprehensive API test scenarios in table format based on prompt descriptions. Creates structured test cases with boundary analysis, validation testing, and testing pyramid principles for REST API endpoints.
+description: Generate comprehensive REST API test scenarios from a method, endpoint, and optional domain hints such as fields, states, transitions, filters, sortable fields, relations, and RBAC context. Covers happy path, validation, security, query behavior, state transitions, idempotency, and error contract checks.
 ---
 
 # API Test Scenario Generator
 
-This skill generates comprehensive API test scenarios in table format based on natural language descriptions. It applies testing pyramid principles, boundary analysis, and validation testing techniques to create structured test cases for REST API endpoints.
+Generate API test-scenario specs that stay grounded in the endpoint plus any domain context the user provides. When domain details are missing, the skill should infer conservatively from HTTP semantics and list assumptions as warnings instead of inventing facts.
 
-## Features
+## What this skill should produce
 
-- **Comprehensive Coverage**: Generates positive, negative, boundary, and edge case scenarios
-- **Testing Pyramid Application**: Balances unit, integration, and E2E test scenarios
-- **Boundary Analysis**: Identifies critical boundary conditions and edge cases
-- **Validation Testing**: Includes input validation, authentication, and authorization tests
-- **Structured Output**: Formatted table with scenario descriptions, expected results, and test classifications
+- a markdown scenario table with clear expected results and HTTP statuses
+- explicit **Priority** labels: `High (H) > Medium (M) > Low (L)`
+- an optional **dependency graph** when one resource must exist before another action can be tested
+- a **Warnings and Assumptions** section for anything not confirmed
 
 ## Usage
 
 Use this command format:
 
+```text
+/api-test-scenario-generator {METHOD} {ENDPOINT}
+  [--fields name:type:constraint,...]
+  [--states STATE1,STATE2,...]
+  [--transitions FROM:TO,...]
+  [--filters name:type,...]
+  [--sortable field1,field2,...]
+  [--relations resource:policy,...]
+  [additional_context]
 ```
-/api-test-scenario-generator {HTTP_METHOD} {ENDPOINT_PATH} [additional_context]
-```
+
+### Context rules
+
+- These hints are optional, but they make the generated scenarios much more accurate.
+- If a hint is missing, fall back to common API patterns and built-in HTTP knowledge only.
+- Any inferred RBAC rule, state machine, or filter behavior must be called out as an assumption.
 
 ### Examples
 
-```
+```text
 /api-test-scenario-generator POST /api/users
 /api-test-scenario-generator GET /api/users/{id}
-/api-test-scenario-generator PUT /api/orders/{id}/status
-```
-
-### Example Output File Structure
-
-**File**: `requirements/users/GET_users_id.md`
-
-```markdown
-# GET /api/users/{id} Test Scenarios
-
-| Scenario   | Test Type  | Description                   | Expected Result      | HTTP Status | Recommended Test Level |
-| ---------- | ---------- | ----------------------------- | -------------------- | ----------- | ---------------------- |
-| Valid ID   | Happy Path | Get user with valid ID        | User object returned | 200         | Integration            |
-| Invalid ID | Negative   | Get user with non-existent ID | Error message        | 404         | Unit                   |
-
-## Warnings and Assumptions
-
-⚠️ **Authentication Requirements**: Assumed endpoint requires authentication but not specified  
-⚠️ **Rate Limiting**: Unknown if endpoint has rate limiting constraints  
-⚠️ **User Permissions**: Assumed all authenticated users can access any user data
+/api-test-scenario-generator POST /api/orders \
+  --fields amount:number:>=0,status:enum:PENDING|CONFIRMED|CANCELLED \
+  --states PENDING,CONFIRMED,SHIPPED,DELIVERED,CANCELLED \
+  --transitions PENDING:CONFIRMED,CONFIRMED:SHIPPED,SHIPPED:DELIVERED \
+  --filters status:string,createdAt:date \
+  --sortable createdAt,totalAmount \
+  --relations user:owner-must-exist
 ```
 
 ## Generated Table Format
 
-| Scenario | Test Type | Description | Expected Result | HTTP Status | Recommended Test Level |
-| -------- | --------- | ----------- | --------------- | ----------- | ---------------------- |
-| ...      | ...       | ...         | ...             | ...         | ...                    |
+| Scenario | Test Type | Description | Expected Result | HTTP Status | Priority | Recommended Test Level |
+| -------- | --------- | ----------- | --------------- | ----------- | -------- | ---------------------- |
+| ...      | ...       | ...         | ...             | ...         | ...      | ...                    |
+
+### Priority rules
+
+- **High (H)** — must-cover scenarios affecting business-critical flow, auth, money, destructive actions, or data integrity
+- **Medium (M)** — important validation and common negative cases
+- **Low (L)** — optional, exploratory, or rarer operational checks
+- The skill assigns the initial priority. A reviewer can always override it.
+
+## Coverage checklist
+
+The generated scenarios should consider, when relevant:
+
+1. **Happy path and CRUD basics**
+2. **Validation and boundary cases** — Unicode, unknown fields, zero values, min/max lengths, date limits
+3. **Authentication and RBAC** — missing token, invalid token, expired JWT → `401`, refresh flow expectations, Admin vs Customer access to other users' resources
+4. **Query behavior** — pagination, filtering, sorting, invalid filter field, invalid sort field, date-range filters
+5. **State machines** — explicit state transitions such as `PENDING → CONFIRMED → SHIPPED → DELIVERED`, plus invalid transitions
+6. **Idempotency** — duplicate `POST` or replayed `Idempotency-Key` must not create duplicate writes
+7. **Referential integrity** — cascade or blocked delete/update behavior when related resources exist
+8. **Protocol and reliability errors** — `405`, `415`, `429`, `502`, `503` where applicable
+9. **Error response contract** — check fields like `error.code`, `error.message`, `error.requestId`, and validation details
+10. **HTTP methods outside CRUD** — `HEAD` and `OPTIONS` when the endpoint contract supports them
 
 ## Output Requirements
 
-### File Generation
+### File generation
 
 - **Format**: Always save output in `.md` format
 - **Location**: `requirements/{main_resource_name}/{method_name}_{resource_path}.md`
   - Example: `requirements/users/GET_users_id.md` for `GET /api/users/{id}`
   - Example: `requirements/orders/PUT_orders_id_status.md` for `PUT /api/orders/{id}/status`
-- **Overwrite Check**: If file already exists, prompt user to confirm overwrite
-- **File Structure**: Include table followed by any warnings/unknowns
+- **Overwrite Check**: If the file already exists, prompt the user before overwriting it
+- **File Structure**: Include scenario table, optional dependency graph, then warnings/unknowns
 
-### Warning Documentation
+### Dependency graph
 
-- **Location**: All warnings about unknowns must be listed at the end of the document
-- **Format**: Use attention sign (⚠️) for each warning
-- **Content**: Include specific details about what information was missing or assumed
+Add a dependency graph when the test flow requires prerequisite resources or state transitions.
 
-### Plan Mode Behavior
+```json
+{
+  "nodes": ["create_user", "update_user", "delete_user"],
+  "edges": [
+    { "from": "create_user", "to": "update_user" },
+    { "from": "create_user", "to": "delete_user" }
+  ]
+}
+```
 
-- **No Implementation Questions**: Do not ask about test implementation details in Plan mode
-- **Focus**: Generate scenarios only, separate test generation to different skill
+### Warning documentation
 
-## Testing Pyramid Guidelines
+- **Location**: List all warnings about unknowns at the end of the document
+- **Format**: Use `⚠️` for each warning
+- **Content**: Say exactly what was assumed or missing (RBAC, filters, states, relations, error schema, etc.)
 
-- **Unit Tests (70%)**: Validation, boundary cases, error conditions - fast isolated tests
-- **Integration Tests (20%)**: API contracts, authentication, happy paths - moderate coverage
-- **E2E Tests (10%)**: Critical user journeys only - minimal but essential coverage
+### Plan mode behavior
 
-This ensures minimal E2E test maintenance while maximizing coverage efficiency.
+- **No Implementation Questions**: Do not ask about test framework details in Plan mode
+- **Focus**: Generate scenarios only; implementation can be handled by another skill
 
-## Test Classifications
+## Test level guidance
 
-- **Happy Path**: Normal successful operations
-- **Boundary**: Edge cases and limit testing
-- **Negative**: Error conditions and invalid inputs
-- **Security**: Authentication and authorization tests
-- **Performance**: Load and stress testing scenarios
+Use the testing pyramid as a **heuristic**, not a rigid quota:
+
+- **Unit**: Most validation and pure business-rule checks
+- **Integration**: API contracts, auth, RBAC, persistence, service-to-service behavior
+- **E2E**: A small set of cross-system critical journeys
+
+Do not force `70/20/10` blindly if the system shape suggests a different balance.
 
 ## Configuration
 
 The skill uses configuration files to customize test generation:
 
-- `config/validation-rules.json` - Input validation patterns
-- `config/test-types.json` - Test classification definitions
-- `templates/` - Table format templates
+- `config/validation-rules.json` — validation, auth, query, error, and protocol rules
+- `config/test-types.json` — test classifications, priority legend, and testing-level guidance
+- `templates/` — markdown output templates
 
-## Implementation
+## Implementation approach
 
-This skill analyzes the provided HTTP method and endpoint to generate appropriate test scenarios using:
+This skill analyzes the provided HTTP method, endpoint, and optional context using:
 
-1. **Pattern Recognition**: Identifies common API patterns (CRUD, pagination, filtering)
-2. **Boundary Analysis**: Generates edge cases based on data types and constraints
-3. **Security Testing**: Includes authentication, authorization, and input sanitization tests
-4. **Error Scenarios**: Creates comprehensive error condition coverage
-5. **Performance Considerations**: Suggests scenarios for load and stress testing
+1. **Pattern recognition** — CRUD, nested resources, pagination, filtering, sorting
+2. **Boundary analysis** — lengths, ranges, Unicode, nullability, unknown fields
+3. **Security testing** — auth, RBAC, ownership, tenant isolation, token expiry
+4. **Lifecycle modeling** — states, transitions, idempotency, referential integrity
+5. **Contract verification** — status codes and structured error responses
+6. **Operational resilience** — rate limits and upstream failure scenarios
 
-### File Generation Process
-
-1. **Parse Input**: Extract HTTP method and resource path
-2. **Generate Scenarios**: Create comprehensive test scenario table
-3. **Collect Warnings**: Track any assumptions or missing information
-4. **Check Existing File**: Verify if output file already exists in requirements folder
-5. **Generate Output**: Create markdown file with table and warnings section
-6. **Save File**: Write to `requirements/{resource}/{method}_{path}.md` format
-
-### Warning Collection
-
-During scenario generation, the skill tracks:
-
-- Missing authentication requirements
-- Unknown data types or constraints
-- Assumed business rules or validations
-- Unclear endpoint behavior or responses
-
-All warnings are documented at the end with ⚠️ symbols for easy identification.
+All unknowns must be surfaced explicitly rather than guessed.

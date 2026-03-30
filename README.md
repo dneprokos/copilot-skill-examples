@@ -1,118 +1,79 @@
-# Copilot Skills Collection
+# Copilot Skill Examples
 
-A curated collection of specialized GitHub Copilot skills designed to enhance AI-assisted development workflows. Each skill provides domain expertise, refined methodologies, and proven best practices for specific development scenarios.
+[![License](https://img.shields.io/github/license/dneprokos/copilot-skill-examples?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/dneprokos/copilot-skill-examples?style=flat-square)](https://github.com/dneprokos/copilot-skill-examples/stargazers)
 
-## 📚 Available Skills
+Example GitHub Copilot skills you can copy into `.github/skills/` and adapt for your own repositories. This repo is focused on reusable patterns, supporting templates, and small helper scripts rather than a published package or app.
 
-### API & Testing
+## Overview
 
-- **[API Test Scenario Generator](.github/skills/api-test-scenario-generator/)** - Generate comprehensive API test scenarios with boundary analysis and validation testing
-- **[Token Usage Reporting](.github/skills/token-usage-reporting/)** - Generate detailed token usage reports for API consumption tracking
+Each skill in this repository targets a specific workflow:
 
-## 🚀 Getting Started
+| Skill                                                                        | Purpose                                                                            | Contents                                    |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------- |
+| [`api-test-scenario-generator`](.github/skills/api-test-scenario-generator/) | Generates structured REST API test scenarios with boundary and validation coverage | `SKILL.md`, templates, config, script       |
+| [`git-branch-creator`](.github/skills/git-branch-creator/)                   | Creates a new Git branch after checking that `main` is ready and up to date        | `SKILL.md`, README, script                  |
+| [`git-commit-creator`](.github/skills/git-commit-creator/)                   | Creates a commit on the current branch from collected git changes                  | `SKILL.md`, README, references, script      |
+| [`readme-polisher`](.github/skills/readme-polisher/)                         | Helps draft or improve a repository `README.md` using real project evidence        | `SKILL.md`, references, assets, scan script |
+| [`token-usage-reporting`](.github/skills/token-usage-reporting/)             | Produces day/week/month token usage reports in table format                        | `SKILL.md`, config, template, script        |
 
-### Using Skills with GitHub Copilot
+## Getting Started
 
-1. **Install Skills**: Copy skill directories to your project's `.github/skills/` folder
-2. **Activate Skills**: Skills are automatically detected by GitHub Copilot when present in the skill directory
-3. **Invoke Skills**: Use natural language commands that match the skill's domain expertise
+1. Clone this repository and open it in VS Code.
+2. Browse the skill folders under `.github/skills/`.
+3. Copy the skill you want into your own project's `.github/skills/` directory.
+4. Prompt Copilot with a request that matches the skill's domain.
 
-### Skill Structure
+### Clone locally
 
-Each skill follows a standardized structure:
-
+```bash
+git clone https://github.com/dneprokos/copilot-skill-examples.git
+cd copilot-skill-examples
 ```
+
+### Example prompts
+
+```text
+Improve this repository README using the readme-polisher skill.
+Generate API test scenarios for POST /api/users.
+Create a new branch named feature/add-login-flow.
+Commit the current branch using the git-commit-creator skill.
+Create a token usage report for this week.
+```
+
+> Exact invocation style can vary by Copilot surface, but clear natural-language prompts work well.
+
+## Typical Skill Layout
+
+```text
 .github/skills/{skill-name}/
-├── SKILL.md          # Main skill definition with YAML frontmatter
-├── README.md         # Comprehensive documentation
-├── config/           # Configuration files and settings
-├── scripts/          # Helper scripts and utilities
-├── templates/        # Reusable templates and examples
-└── examples/         # Usage examples and demonstrations
+├── SKILL.md
+├── README.md
+├── config/        # optional configuration
+├── scripts/       # optional helper utilities
+├── templates/     # optional output templates
+└── references/    # optional guidance material
 ```
 
-## 📖 Skill Documentation
+## Repository Map
 
-### SKILL.md Format
-
-Each skill contains a `SKILL.md` file with YAML frontmatter:
-
-```yaml
----
-name: skill-name
-description: Brief description of skill capabilities
----
-```
-
-The skill file includes:
-
-- **Name & Description**: Clear identification and purpose
-- **Features**: Key capabilities and benefits
-- **Usage**: Command formats and invocation patterns
-- **Examples**: Practical demonstrations
-- **Best Practices**: Proven methodologies and guidelines
-
-## 🛠️ Development Guidelines
-
-### Creating New Skills
-
-1. **Identify Domain**: Focus on specific development domains or workflows
-2. **Define Scope**: Clear boundaries for skill expertise and capabilities
-3. **Structure Content**: Follow the standardized directory structure
-4. **Document Thoroughly**: Provide comprehensive examples and usage patterns
-5. **Test & Validate**: Ensure skills work effectively with GitHub Copilot
-
-### Skill Best Practices
-
-- **Domain Expertise**: Each skill should focus on a specific area of expertise
-- **Proven Methods**: Include tested workflows and methodologies
-- **Clear Instructions**: Provide unambiguous usage guidance
-- **Practical Examples**: Include real-world scenarios and demonstrations
-- **Consistent Format**: Follow established documentation patterns
-
-## 📂 Repository Structure
-
-```
+```text
 copilot-skill-examples/
 ├── .github/
-│   └── skills/                    # Skills directory
+│   └── skills/
 │       ├── api-test-scenario-generator/
+│       ├── git-branch-creator/
+│       ├── git-commit-creator/
+│       ├── readme-polisher/
 │       └── token-usage-reporting/
-├── README.md                      # This file
-└── LICENSE                       # License information
+├── README.md
+└── LICENSE
 ```
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are welcome! To add a new skill:
+Contributions are welcome. If you add a new skill, keep it focused, document it clearly, and include any supporting templates or scripts needed to make the workflow reproducible.
 
-1. Fork the repository
-2. Create a new skill directory in `.github/skills/`
-3. Follow the standardized structure and documentation format
-4. Include comprehensive examples and usage patterns
-5. Submit a pull request with detailed description
+## License
 
-### Contribution Guidelines
-
-- **Quality Focus**: Ensure skills provide genuine value and expertise
-- **Documentation**: Include thorough documentation and examples
-- **Testing**: Validate skills work effectively with GitHub Copilot
-- **Consistency**: Follow established patterns and conventions
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🔗 Resources
-
-- [GitHub Copilot Documentation](https://docs.github.com/en/copilot)
-- [Copilot Skills Best Practices](https://github.com/github/copilot-docs)
-- [AI-Assisted Development Patterns](https://patterns.dev/)
-
-## 📊 Usage Statistics
-
-Track the effectiveness of your skills and continuously improve based on usage patterns and feedback.
-
----
-
-**Happy coding with enhanced AI assistance! 🚀**
+Released under the MIT License. See [`LICENSE`](LICENSE) for details.
