@@ -1,0 +1,29 @@
+[
+  {
+    "prompt": "Improve the README for this repository.",
+    "expected": "A concise, accurate README with a clear overview and practical setup steps.",
+    "assertions": [
+      "The output should not invent package managers, release badges, or CI systems.",
+      "The README should include a useful getting-started section when setup information exists.",
+      "No placeholder markers should remain."
+    ]
+  },
+  {
+    "prompt": "Make this repo look more polished and add a few badges.",
+    "expected": "A cleaned-up README with a small, verified badge row.",
+    "assertions": [
+      "Badges should be consistent in style.",
+      "Only badges backed by real repository metadata should be included.",
+      "The result should still read naturally, not like a badge showcase."
+    ]
+  },
+  {
+    "prompt": "Generate a README for this tiny script project.",
+    "expected": "A short README appropriate for a small utility.",
+    "assertions": [
+      "The README should stay proportional to the project size.",
+      "Optional sections can be omitted when they add little value.",
+      "Usage should be clearer after the rewrite."
+    ]
+  }
+]

@@ -1,0 +1,49 @@
+{
+  "dataSources": {
+    "playwright": {
+      "enabled": true,
+      "logPath": "./test-results/**/trace.zip",
+      "tokenField": "networkRequests.tokens",
+      "description": "Extract token usage from Playwright test traces"
+    },
+    "apiLogs": {
+      "enabled": true,
+      "logPath": "./logs/api-requests.log",
+      "tokenField": "response.usage.total_tokens",
+      "description": "Parse API request logs for token consumption"
+    },
+    "environment": {
+      "enabled": true,
+      "variables": [
+        "DAILY_TOKEN_COUNT",
+        "WEEKLY_TOKEN_COUNT",
+        "MONTHLY_TOKEN_COUNT"
+      ],
+      "description": "Read token counts from environment variables"
+    }
+  },
+  "pricing": {
+    "tokenCostPer1K": 0.002,
+    "currency": "USD",
+    "description": "Cost per 1000 tokens in USD"
+  },
+  "categories": {
+    "api": {
+      "patterns": ["*/api/*", "**/crud.spec.ts"],
+      "description": "API endpoint calls"
+    },
+    "auth": {
+      "patterns": ["*/auth/*", "**/smoke.spec.ts", "**/login*"],
+      "description": "Authentication flows"
+    },
+    "test": {
+      "patterns": ["**/test-results/**", "**/playwright-report/**"],
+      "description": "Test execution overhead"
+    }
+  },
+  "reporting": {
+    "timezone": "UTC",
+    "dateFormat": "YYYY-MM-DD",
+    "numberFormat": "en-US"
+  }
+}
