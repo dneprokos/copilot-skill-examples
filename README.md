@@ -5,6 +5,8 @@
 
 Example GitHub Copilot skills you can copy into `.github/skills/` and adapt for your own repositories. This repo is focused on reusable patterns, supporting templates, and small helper scripts rather than a published package or app.
 
+![Reusable Copilot skills: modular SKILL.md workflows you copy into .github/skills](docs/assets/skills-hero.svg)
+
 ## Overview
 
 Each skill in this repository targets a specific workflow:
@@ -67,6 +69,9 @@ Summarize these meeting notes using the meeting-notes-summarizer skill (paste no
 
 ```text
 copilot-skill-examples/
+├── docs/
+│   └── assets/
+│       └── skills-hero.svg
 ├── .github/
 │   └── skills/
 │       ├── api-test-scenario-generator/

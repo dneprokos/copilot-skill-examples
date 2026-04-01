@@ -25,6 +25,14 @@ Do **not** use it for:
 - rewriting history, force push, or merge (use explicit user request outside these skills)
 - operations on `main` as the branch to push (push-creator blocks `main`)
 
+## GitHub token (non-DryRun)
+
+Opening a PR needs a GitHub token with the **same resolution** as **git-pr-creator**: `GITHUB_TOKEN` or `GH_TOKEN`, then **repo-root** `github-pr.local.json` (preferred for Copilot + Cursor skill layouts), then legacy `.github/skills/git-pr-creator/config/github-pr.local.json`. Details: [git-pr-creator README](../git-pr-creator/README.md).
+
+- **Script-driven:** `run-git-ship-workflow.ps1` checks the token **before** Phase 1 when `-DryRun` is not set, then sets `GH_TOKEN` for subprocesses.
+
+- **Agent-driven:** Confirm a token is configured before Phase 4 (or at workflow start); if missing, stop and point to the git-pr-creator README.
+
 ## Two ways to run
 
 ### A. Agent-driven (interactive commit)

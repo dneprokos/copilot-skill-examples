@@ -65,6 +65,57 @@ function Get-PrUrlFromOutput {
     return $matches[$matches.Count - 1].Value
 }
 
+# Keep in sync with create-pr.ps1: Read-GitHubTokenFromJsonFile + Resolve-GitHubToken
+function Read-GitHubTokenFromJsonFile {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw -Encoding utf8
+        $obj = $raw | ConvertFrom-Json
+        $token = $obj.github_token
+        if ($token -is [string] -and -not [string]::IsNullOrWhiteSpace($token)) {
+            return $token.Trim()
+        }
+    }
+    catch {
+        return $null
+    }
+
+    return $null
+}
+
+function Resolve-GitHubTokenForWorkflow {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepoRoot
+    )
+
+    $fromEnv = $env:GITHUB_TOKEN
+    if ([string]::IsNullOrWhiteSpace($fromEnv)) {
+        $fromEnv = $env:GH_TOKEN
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
+        return $fromEnv.Trim()
+    }
+
+    $rootConfig = Join-Path $RepoRoot 'github-pr.local.json'
+    $fromRoot = Read-GitHubTokenFromJsonFile -Path $rootConfig
+    if (-not [string]::IsNullOrWhiteSpace($fromRoot)) {
+        return $fromRoot
+    }
+
+    $legacyConfig = Join-Path $RepoRoot '.github/skills/git-pr-creator/config/github-pr.local.json'
+    return Read-GitHubTokenFromJsonFile -Path $legacyConfig
+}
+
 if (-not $SkipBranch -and [string]::IsNullOrWhiteSpace($BranchName)) {
     Write-Host 'BranchName is required unless -SkipBranch is set.'
     exit 1
@@ -99,6 +150,23 @@ foreach ($path in @($branchScript, $commitScript, $pushScript, $prScript)) {
         Write-Host "Missing script: $path"
         exit 1
     }
+}
+
+if (-not $DryRun) {
+    $resolvedToken = Resolve-GitHubTokenForWorkflow -RepoRoot $repoRoot
+    if ([string]::IsNullOrWhiteSpace($resolvedToken)) {
+        Write-Host @'
+GitHub token required before ship workflow (non-DryRun).
+
+Set GITHUB_TOKEN or GH_TOKEN, or create repo-root github-pr.local.json (preferred),
+or legacy .github/skills/git-pr-creator/config/github-pr.local.json.
+
+See .github/skills/git-pr-creator/README.md
+'@
+        exit 1
+    }
+
+    $env:GH_TOKEN = $resolvedToken
 }
 
 $accumulatedOutput = New-Object System.Collections.Generic.List[string]

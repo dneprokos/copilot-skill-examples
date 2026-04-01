@@ -76,14 +76,15 @@ If the answer is `No`, stop immediately.
 
 ### 4. GitHub token precondition (non-DryRun)
 
-Before running the helper script **without** `-DryRun`, verify a GitHub token is available **either**:
+Before running the helper script **without** `-DryRun`, verify a GitHub token is available from **one** of:
 
 1. Environment variable **`GITHUB_TOKEN`** or **`GH_TOKEN`** (non-empty), **or**
-2. Local file **`.github/skills/git-pr-creator/config/github-pr.local.json`** with a string property **`github_token`**.
+2. **`github-pr.local.json`** at the **repository root** (preferred; works the same for `.github/skills` and `.cursor/skills` workflows), with string property **`github_token`**, **or**
+3. **Legacy:** **`.github/skills/git-pr-creator/config/github-pr.local.json`** with the same property.
 
-**Precedence:** environment variables win over the JSON file.
+**Precedence:** environment variables, then root `github-pr.local.json`, then the legacy skill config path.
 
-If neither source provides a token for a real PR run, **stop** and tell the user to follow [README.md](README.md) (copy `github-pr.local.example.json` to `github-pr.local.json`, or set `GH_TOKEN`). **Never** commit `github-pr.local.json` or paste tokens into chat.
+If none provide a token for a real PR run, **stop** and tell the user to follow [README.md](README.md) (copy repo-root `github-pr.local.example.json` to `github-pr.local.json`, or set `GH_TOKEN`). **Never** commit `github-pr.local.json` or paste tokens into chat.
 
 `-DryRun` does **not** require a token (local preview only). Duplicate-prefix checks during DryRun may still need an authenticated `gh` if they call the API.
 
@@ -111,7 +112,7 @@ The script will:
 
 - detect the current branch
 - block PR creation from `main`
-- require a GitHub token for non-DryRun runs (env or `github-pr.local.json`)
+- require a GitHub token for non-DryRun runs (env, repo-root `github-pr.local.json`, or legacy skill config path)
 - ask approval before auto-installing `gh` when needed
 - keep the remote branch name the same as the local one
 - generate a title from the branch name or current changes
@@ -121,7 +122,7 @@ The script will:
 ## Hard rules
 
 - Never create a PR from `main` with this skill.
-- For non-DryRun runs, never proceed without a configured token (`GITHUB_TOKEN`, `GH_TOKEN`, or `github-pr.local.json`).
+- For non-DryRun runs, never proceed without a configured token (`GITHUB_TOKEN`, `GH_TOKEN`, repo-root `github-pr.local.json`, or legacy path under `.github/skills/git-pr-creator/config/`).
 - Never commit `github-pr.local.json` or expose tokens in logs or commits.
 - If a ticket-like prefix exists, preserve it as `[PREFIX]: ...` in the title.
 - If the prefix already exists in an open PR, ask the user before continuing.

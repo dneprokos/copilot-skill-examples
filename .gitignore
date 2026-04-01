@@ -50,6 +50,7 @@ wheels/
 *.temp
 
 # git-pr-creator local secrets (never commit)
+/github-pr.local.json
 **/git-pr-creator/config/github-pr.local.json
 
 # Environment variables
