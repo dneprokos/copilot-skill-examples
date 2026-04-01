@@ -20,6 +20,56 @@ function Exit-WithMessage {
     exit $Code
 }
 
+function Read-GitHubTokenFromJsonFile {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw -Encoding utf8
+        $obj = $raw | ConvertFrom-Json
+        $token = $obj.github_token
+        if ($token -is [string] -and -not [string]::IsNullOrWhiteSpace($token)) {
+            return $token.Trim()
+        }
+    }
+    catch {
+        return $null
+    }
+
+    return $null
+}
+
+function Resolve-GitHubToken {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepoRoot
+    )
+
+    $fromEnv = $env:GITHUB_TOKEN
+    if ([string]::IsNullOrWhiteSpace($fromEnv)) {
+        $fromEnv = $env:GH_TOKEN
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
+        return $fromEnv.Trim()
+    }
+
+    $rootConfig = Join-Path $RepoRoot 'github-pr.local.json'
+    $fromRoot = Read-GitHubTokenFromJsonFile -Path $rootConfig
+    if (-not [string]::IsNullOrWhiteSpace($fromRoot)) {
+        return $fromRoot
+    }
+
+    $legacyConfig = Join-Path $RepoRoot '.github/skills/git-pr-creator/config/github-pr.local.json'
+    return Read-GitHubTokenFromJsonFile -Path $legacyConfig
+}
+
 function Invoke-Git {
     param(
         [Parameter(Mandatory)]
@@ -164,6 +214,14 @@ function Ensure-GitHubCliReady {
     }
 
     if (-not $RequireAuth) {
+        return
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+        if (-not (Test-GitHubCliAuthenticated)) {
+            Exit-WithMessage -Message 'GitHub CLI could not authenticate with the configured token. Verify GITHUB_TOKEN or GH_TOKEN, or github-pr.local.json at repo root (see .github/skills/git-pr-creator/README.md).'
+        }
+
         return
     }
 
@@ -357,6 +415,62 @@ function Test-RemoteBranchExists {
     return $?
 }
 
+function Get-PrBodyFromBranchCommits {
+    param(
+        [Parameter(Mandatory)]
+        [string]$BaseBranch,
+        [Parameter(Mandatory)]
+        [string]$CurrentBranch
+    )
+
+    $range = "origin/$BaseBranch..HEAD"
+    $raw = ''
+
+    try {
+        $raw = Invoke-Git -Arguments @('log', $range, '--reverse', '--format=%s')
+    }
+    catch {
+        $raw = ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        try {
+            $raw = Invoke-Git -Arguments @('log', "${BaseBranch}..HEAD", '--reverse', '--format=%s')
+        }
+        catch {
+            $raw = ''
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        try {
+            $raw = Invoke-Git -Arguments @('log', '-n', '50', '--reverse', '--format=%s')
+        }
+        catch {
+            $raw = ''
+        }
+    }
+
+    $subjects = @($raw -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    [void]$lines.Add('## Summary')
+    [void]$lines.Add('')
+
+    if ($subjects.Count -eq 0) {
+        [void]$lines.Add("No commit subjects found for range ``origin/$BaseBranch..HEAD``. Run ``git fetch`` and ensure this branch has commits ahead of the base.")
+    }
+    else {
+        [void]$lines.Add('Commits on this branch (oldest first):')
+        [void]$lines.Add('')
+        foreach ($s in $subjects) {
+            [void]$lines.Add("- $s")
+        }
+    }
+
+    return ($lines -join "`n")
+}
+
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Exit-WithMessage -Message 'Git is not available in this environment.'
 }
@@ -378,6 +492,27 @@ try {
 
     if ($currentBranch -eq 'main') {
         Exit-WithMessage -Message 'You cannot create a pull request from the main branch with this skill.'
+    }
+
+    if (-not $DryRun) {
+        $resolvedToken = Resolve-GitHubToken -RepoRoot $repoRoot
+        if ([string]::IsNullOrWhiteSpace($resolvedToken)) {
+            Exit-WithMessage -Message @'
+GitHub token required for PR operations (non-DryRun).
+
+Set environment variable GITHUB_TOKEN or GH_TOKEN, or create (preferred, repo root):
+  github-pr.local.json
+with a string property "github_token".
+
+Optional legacy path:
+  .github/skills/git-pr-creator/config/github-pr.local.json
+
+Copy github-pr.local.example.json from the repo root to github-pr.local.json and paste your token.
+Do not commit github-pr.local.json. See .github/skills/git-pr-creator/README.md for how to create a token.
+'@
+        }
+
+        $env:GH_TOKEN = $resolvedToken
     }
 
     $prTitle = Get-ProposedPrTitle -CurrentBranch $currentBranch -BaseBranch $BaseBranch
@@ -420,13 +555,7 @@ try {
 
     $remoteBranchExists = Test-RemoteBranchExists -BranchName $currentBranch
 
-    $bodyLines = @(
-        '## Summary',
-        '',
-        '- created from the current branch using the git-pr-creator skill',
-        '- title generated from the branch name and recent branch changes'
-    )
-    $prBody = $bodyLines -join "`n"
+    $prBody = Get-PrBodyFromBranchCommits -BaseBranch $BaseBranch -CurrentBranch $currentBranch
 
     if ($DryRun) {
         $ghAvailable = [bool](Get-Command gh -ErrorAction SilentlyContinue)
@@ -454,6 +583,10 @@ try {
         else {
             Write-Output "[DryRun] Command: gh pr create --base $BaseBranch --head $currentBranch --title \"$prTitle\""
         }
+
+        Write-Output ''
+        Write-Output '[DryRun] Proposed PR body:'
+        Write-Output $prBody
 
         return
     }
