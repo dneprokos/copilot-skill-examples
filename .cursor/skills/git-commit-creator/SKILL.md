@@ -4,7 +4,8 @@ description: >-
   Create a commit on the current Git branch from the collected repository changes.
   Use when the user asks to commit the current branch, save current work, or
   generate a commit message from git diff output. Prompt whether to stage all
-  unstaged files before collecting the changes.
+  unstaged files before collecting the changes. Confirm the proposed commit
+  message with the user before creating the commit.
 argument-hint: "optional commit context or preferred commit style"
 ---
 
@@ -66,9 +67,11 @@ If there are no staged changes after the chosen flow, stop and return:
 No staged changes are available to commit.
 ```
 
-### 3. Write the commit message
+### 3. Draft, show, and confirm the commit message
 
-Base the message only on the collected git changes.
+#### 3a. Draft
+
+Produce **one** proposed commit message based only on the collected git changes.
 
 Follow these static best-practice rules:
 
@@ -87,12 +90,40 @@ docs: update README with git workflow skills
 refactor: simplify API scenario priority rules
 ```
 
+#### 3b. Show and confirm
+
+Display the proposed message prominently: use a short label, then a single fenced block containing only the message (no nested fences), for example:
+
+**Proposed commit message**
+
+```text
+<proposed-message>
+```
+
+Then ask:
+
+```text
+Is this commit message OK to use?
+```
+
+Offer exactly these two options:
+
+- `OK` — use the proposed message
+- `Not OK` — I will provide my own message
+
+If the ask-questions tool is available, use it.
+
+#### 3c. Branch on the answer
+
+- If **OK** — go to **step 4** using `<proposed-message>` as the final message.
+- If **Not OK** — tell the user to send their **exact** commit message in their next reply (one line subject, or subject plus body if they prefer). Do **not** create the commit until they provide it. After they send it, use **that** text as the final message for **step 4**. Do not invent or alter their wording unless they ask you to edit it.
+
 ### 4. Create the commit
 
-Run the helper script with the generated message:
+Run the helper script with the **final** message (proposed after OK, or user-supplied after Not OK):
 
 ```powershell
-pwsh -NoProfile -File ./.github/skills/git-commit-creator/scripts/create-commit.ps1 [-StageAll] -CommitMessage "<generated-message>"
+pwsh -NoProfile -File ./.github/skills/git-commit-creator/scripts/create-commit.ps1 [-StageAll] -CommitMessage "<final-message>"
 ```
 
 Return the exact git result after the commit command completes.
@@ -104,3 +135,4 @@ Return the exact git result after the commit command completes.
 - Do not amend, force-push, or rewrite history unless explicitly requested.
 - Build the commit message from the real diff, not from assumptions.
 - Keep the message clear and professional.
+- Do not create the commit until the user chooses **OK** for the proposed message, or **explicitly supplies** their own message after **Not OK**.
