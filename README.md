@@ -22,6 +22,7 @@ Each skill in this repository targets a specific workflow:
 | [`meeting-notes-summarizer`](.github/skills/meeting-notes-summarizer/)       | Turns transcripts or messy notes into a Teams/email-ready structured recap       | `SKILL.md`, references                      |
 | [`readme-polisher`](.github/skills/readme-polisher/)                         | Helps draft or improve a repository `README.md` using real project evidence        | `SKILL.md`, references, assets, scan script |
 | [`token-usage-reporting`](.github/skills/token-usage-reporting/)             | Produces day/week/month token usage reports in table format                        | `SKILL.md`, config, template, script        |
+| [`jira-mcp-assistant`](.github/skills/jira-mcp-assistant/)                   | Jira Cloud JQL and backlog-style lists via Atlassian MCP (read-first; extend for writes) | `SKILL.md`, `references/`              |
 
 ## Getting Started
 
@@ -49,9 +50,26 @@ Create a pull request from this branch using the git-pr-creator skill.
 Run the git-workflow-orchestrator to ship my branch (branch, commit, push, PR).
 Create a token usage report for this week.
 Summarize these meeting notes using the meeting-notes-summarizer skill (paste notes below).
+List Jira backlog issues for project SCRUM using the jira-mcp-assistant skill (Atlassian MCP must be connected).
 ```
 
 > Exact invocation style can vary by Copilot surface, but clear natural-language prompts work well.
+
+This repository also mirrors the same skill folders under [`.cursor/skills/`](.cursor/skills/) for Cursor Agent Skills; copy from either location depending on your editor.
+
+## Jira skills and Atlassian MCP
+
+The [`jira-mcp-assistant`](.github/skills/jira-mcp-assistant/) skill is a **read-first** workflow: resolve `cloudId`, run JQL through the MCP (e.g. `searchJiraIssuesUsingJql`), paginate, and format results. It does not replace MCP setup—you still connect Cursor (or another client) to the [Atlassian Rovo MCP Server](https://support.atlassian.com/rovo/docs/setting-up-ides/) and authenticate (OAuth or API token if your org allows it).
+
+**How to extend without renaming the skill**
+
+1. **Keep the umbrella id** `jira-mcp-assistant` so existing prompts keep working.
+2. **Widen the YAML `description`** in `SKILL.md` with new trigger phrases (e.g. “create Jira issue”, “dashboard filter”, “saved filter”) so the agent selects this skill for those requests.
+3. **Add sections** to `SKILL.md` for new flows (create issue, transition, comments, dashboard or filter metadata), each with: required inputs, which MCP tool to call, pagination or confirmation rules, and output shape.
+4. **Split reference files** under `references/` (e.g. `references/dashboard-filters.md`) when `SKILL.md` grows long; link them from the main instructions.
+5. **Add a separate skill only** for a large or high-risk workflow (for example release approvals) that should not share triggers with everyday queries.
+
+After extending, copy the updated folder into your project’s `.github/skills/` or `.cursor/skills/` and re-test MCP tool names against your client’s live schema.
 
 ## Typical Skill Layout
 
@@ -82,7 +100,10 @@ copilot-skill-examples/
 │       ├── git-workflow-orchestrator/
 │       ├── meeting-notes-summarizer/
 │       ├── readme-polisher/
-│       └── token-usage-reporting/
+│       ├── token-usage-reporting/
+│       └── jira-mcp-assistant/
+├── .cursor/
+│   └── skills/    # Cursor Agent copy of the same skills (keep in sync when contributing)
 ├── README.md
 └── LICENSE
 ```
