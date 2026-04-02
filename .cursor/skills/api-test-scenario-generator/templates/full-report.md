@@ -18,6 +18,10 @@ Generated on: {{DATE}}
 - **Recommended Test Level**: Use the testing pyramid as a heuristic, not a fixed quota
 - **HTTP Status**: Expected response code for each scenario
 
+## References
+
+{{REFERENCES_SECTION}}
+
 ## Testing Pyramid Guidelines
 
 - **Unit Tests**: Fast validation, boundary cases, and pure business-rule checks

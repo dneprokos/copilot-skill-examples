@@ -1,6 +1,6 @@
 # API Test Scenario Generator
 
-A GitHub Copilot skill for producing API scenario specs from an HTTP method, endpoint, and optional domain hints.
+A GitHub Copilot skill for producing API scenario specs from an HTTP method, endpoint, optional domain hints, and (optionally) an OpenAPI spec.
 
 ## Quick Start
 
@@ -65,6 +65,8 @@ The skill assigns these priorities as a starting point, and reviewers can overri
 --filters     name:type,...
 --sortable    field1,field2,...
 --relations   resource:policy,...
+--openapiSpec PATH_OR_JSON_OR_YAML
+--openapiOperationId OPERATION_ID
 ```
 
 Use them when the endpoint depends on domain rules that cannot be safely inferred from the path alone.

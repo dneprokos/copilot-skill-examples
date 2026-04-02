@@ -1,6 +1,6 @@
 ---
 name: api-test-scenario-generator
-description: Generate comprehensive REST API test scenarios from a method, endpoint, and optional domain hints such as fields, states, transitions, filters, sortable fields, relations, and RBAC context. Covers happy path, validation, security, query behavior, state transitions, idempotency, and error contract checks.
+description: Generate comprehensive REST API test scenarios from a method, endpoint, optional domain hints, and an optional OpenAPI spec. Covers happy path, validation, security, query behavior, state transitions, idempotency, and error contract checks.
 ---
 
 # API Test Scenario Generator
@@ -26,12 +26,15 @@ Use this command format:
   [--filters name:type,...]
   [--sortable field1,field2,...]
   [--relations resource:policy,...]
+  [--openapiSpec PATH_OR_JSON_OR_YAML]
+  [--openapiOperationId OPERATION_ID]
   [additional_context]
 ```
 
 ### Context rules
-
 - These hints are optional, but they make the generated scenarios much more accurate.
+- If `--openapiSpec` is provided, the skill will attempt to locate the matching OpenAPI operation (by `--openapiOperationId` when provided, otherwise by `{METHOD} {ENDPOINT}`) and infer request body fields, possible states (from enums), and query parameters.
+- Manual hints (`--fields`, `--states`, `--filters`, `--sortable`) take precedence over OpenAPI-derived inference; any missing details are still recorded as warnings/assumptions.
 - If a hint is missing, fall back to common API patterns and built-in HTTP knowledge only.
 - Any inferred RBAC rule, state machine, or filter behavior must be called out as an assumption.
 
@@ -47,6 +50,9 @@ Use this command format:
   --filters status:string,createdAt:date \
   --sortable createdAt,totalAmount \
   --relations user:owner-must-exist
+
+/api-test-scenario-generator POST /api/orders \
+  --openapiSpec ./openapi.json
 ```
 
 ## Generated Table Format

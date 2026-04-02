@@ -60,6 +60,8 @@ function parseCommandLineContext(args) {
     filters: [],
     sortable: [],
     relations: [],
+    openapiSpec: "",
+    openapiOperationId: "",
   };
 
   const rawTextParts = [];
@@ -97,6 +99,13 @@ function parseCommandLineContext(args) {
       case "relations":
         context.relations = parseRelationPairs(nextValue);
         break;
+      case "openapi":
+      case "openapiSpec":
+        context.openapiSpec = nextValue;
+        break;
+      case "openapiOperationId":
+        context.openapiOperationId = nextValue;
+        break;
       default:
         rawTextParts.push(`${token} ${nextValue}`.trim());
         break;
@@ -112,6 +121,466 @@ class APITestScenarioGenerator {
     this.skillDir = path.dirname(path.dirname(__filename));
     this.loadConfig();
     this.loadTemplates();
+  }
+
+  tryParseOpenApiSpec(openapiSpecInput) {
+    if (!openapiSpecInput) {
+      return { spec: null, warnings: [] };
+    }
+
+    // Allow passing a JS object (e.g. from the skill runtime).
+    if (typeof openapiSpecInput === "object") {
+      return { spec: openapiSpecInput, warnings: [] };
+    }
+
+    const input = String(openapiSpecInput).trim();
+    if (!input) {
+      return { spec: null, warnings: [] };
+    }
+
+    try {
+      // If it's a file path, load and parse it.
+      if (fs.existsSync(input)) {
+        const fileContents = fs.readFileSync(input, "utf8");
+        try {
+          return { spec: JSON.parse(fileContents), warnings: [] };
+        } catch {
+          // Try YAML if js-yaml is available.
+          try {
+            // eslint-disable-next-line import/no-extraneous-dependencies
+            const yaml = require("js-yaml");
+            return { spec: yaml.load(fileContents), warnings: [] };
+          } catch (e) {
+            return {
+              spec: null,
+              warnings: [
+                `OpenAPI file was not valid JSON and YAML parsing is unavailable (missing 'js-yaml'). Path: ${input}`,
+              ],
+            };
+          }
+        }
+      }
+
+      // Otherwise treat it as JSON (or YAML if js-yaml is available).
+      try {
+        return { spec: JSON.parse(input), warnings: [] };
+      } catch {
+        try {
+          // eslint-disable-next-line import/no-extraneous-dependencies
+          const yaml = require("js-yaml");
+          return { spec: yaml.load(input), warnings: [] };
+        } catch {
+          return {
+            spec: null,
+            warnings: [
+              "OpenAPI spec input could not be parsed as JSON, and YAML parsing is unavailable (missing 'js-yaml').",
+            ],
+          };
+        }
+      }
+    } catch (e) {
+      return {
+        spec: null,
+        warnings: [`Failed to load OpenAPI spec: ${e.message || String(e)}`],
+      };
+    }
+  }
+
+  resolveJsonPointer(obj, pointer) {
+    if (!pointer || typeof pointer !== "string") return null;
+    if (!pointer.startsWith("#/")) return null;
+
+    const parts = pointer
+      .slice(2)
+      .split("/")
+      .map((p) => p.replace(/~1/g, "/").replace(/~0/g, "~"));
+
+    let cur = obj;
+    for (const part of parts) {
+      if (!cur || typeof cur !== "object" || !(part in cur)) {
+        return null;
+      }
+      cur = cur[part];
+    }
+    return cur || null;
+  }
+
+  resolveSchemaRefs(schema, openapiSpec, seenRefs = new Set()) {
+    if (!schema || typeof schema !== "object") return schema;
+    if (schema.$ref && typeof schema.$ref === "string") {
+      const ref = schema.$ref;
+      if (seenRefs.has(ref)) return schema;
+      seenRefs.add(ref);
+
+      const resolved = this.resolveJsonPointer(openapiSpec, ref);
+      return resolved ? this.resolveSchemaRefs(resolved, openapiSpec, seenRefs) : schema;
+    }
+
+    // Handle common composite schemas (limited, but useful for extracting fields).
+    if (Array.isArray(schema.allOf)) {
+      const merged = { type: "object", properties: {}, required: [] };
+      for (const item of schema.allOf) {
+        const resolvedItem = this.resolveSchemaRefs(item, openapiSpec, seenRefs);
+        if (!resolvedItem || typeof resolvedItem !== "object") continue;
+        if (resolvedItem.properties) {
+          merged.properties = { ...merged.properties, ...resolvedItem.properties };
+        }
+        if (Array.isArray(resolvedItem.required)) {
+          merged.required = Array.from(
+            new Set([...(merged.required || []), ...resolvedItem.required]),
+          );
+        }
+      }
+      return merged;
+    }
+
+    return schema;
+  }
+
+  extractSchemaFromContent(content, openapiSpec) {
+    if (!content || typeof content !== "object") return null;
+    const mediaTypes = Object.keys(content);
+    if (mediaTypes.length === 0) return null;
+
+    const preferred =
+      mediaTypes.find((m) => /application\/json/i.test(m)) || mediaTypes[0];
+    const mediaTypeObj = content[preferred];
+    if (!mediaTypeObj || typeof mediaTypeObj !== "object") return null;
+
+    const schema = mediaTypeObj.schema || null;
+    return this.resolveSchemaRefs(schema, openapiSpec);
+  }
+
+  templateSegments(pathTemplate) {
+    const segments = String(pathTemplate || "")
+      .split("/")
+      .filter(Boolean)
+      .map((seg) => {
+        if (/^\{[^}]+\}$/.test(seg)) return "{}";
+        if (seg.startsWith(":")) return "{}";
+        return seg;
+      });
+    return segments;
+  }
+
+  endpointMatchCandidates(endpoint) {
+    const normalized = String(endpoint || "").trim();
+    if (!normalized) return [];
+    const segments = normalized.split("/").filter(Boolean);
+
+    const stripLeading = (s) => s.slice(0);
+    const candidates = [];
+
+    const pushCandidate = (segList) => {
+      const joined = "/" + segList.join("/");
+      candidates.push(this.templateSegments(joined));
+    };
+
+    // 1) Original
+    pushCandidate(segments);
+
+    // 2) Remove leading `api`
+    if (segments[0] && segments[0].toLowerCase() === "api") {
+      pushCandidate(stripLeading(segments).slice(1));
+    }
+
+    // 3) Remove leading `v{number}` (common versioning)
+    if (segments[0] && /^v\d+$/i.test(segments[0])) {
+      pushCandidate(stripLeading(segments).slice(1));
+    }
+
+    // 4) Remove leading `api` + `v{number}`
+    if (
+      segments[0] &&
+      segments[0].toLowerCase() === "api" &&
+      segments[1] &&
+      /^v\d+$/i.test(segments[1])
+    ) {
+      pushCandidate(stripLeading(segments).slice(2));
+    }
+
+    // De-dupe by segment signature.
+    const seen = new Set();
+    return candidates.filter((c) => {
+      const key = c.join("/");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  matchOpenApiPath(openapiPathTemplate, endpoint) {
+    const apiSegs = this.templateSegments(openapiPathTemplate);
+    const candidates = this.endpointMatchCandidates(endpoint);
+    return candidates.some(
+      (candidate) =>
+        candidate.length === apiSegs.length &&
+        candidate.every((seg, idx) => seg === "{}" || apiSegs[idx] === "{}" || seg === apiSegs[idx]),
+    );
+  }
+
+  findOpenApiOperation(openapiSpec, method, endpoint, operationId) {
+    if (!openapiSpec || typeof openapiSpec !== "object") return null;
+    const paths = openapiSpec.paths;
+    if (!paths || typeof paths !== "object") return null;
+
+    const methodLower = String(method || "").toLowerCase();
+    const operationMethods = [
+      "get",
+      "post",
+      "put",
+      "patch",
+      "delete",
+      "head",
+      "options",
+    ];
+
+    // 1) operationId takes precedence.
+    if (operationId) {
+      for (const [pathKey, pathItem] of Object.entries(paths)) {
+        if (!pathItem || typeof pathItem !== "object") continue;
+        for (const m of operationMethods) {
+          const op = pathItem[m];
+          if (op && op.operationId === operationId) {
+            return { operation: op, matchedPathKey: pathKey, matchedMethodKey: m };
+          }
+        }
+      }
+      return null;
+    }
+
+    // 2) Match by path template + method.
+    for (const [pathKey, pathItem] of Object.entries(paths)) {
+      if (!pathItem || typeof pathItem !== "object") continue;
+      if (!this.matchOpenApiPath(pathKey, endpoint)) continue;
+
+      const op = pathItem[methodLower];
+      if (op) {
+        return { operation: op, matchedPathKey: pathKey, matchedMethodKey: methodLower };
+      }
+    }
+
+    return null;
+  }
+
+  inferOpenApiOperationContext(openapiSpec, operation) {
+    const derived = {
+      responseCodes: [],
+      errorCodes: [],
+      responseCodesSet: new Set(),
+      securityPresent: false,
+      queryParams: [],
+      inferredStates: [],
+      inferredFields: [],
+      errorContractFields: [],
+    };
+
+    const responses = (operation && operation.responses) || {};
+    for (const [codeStr] of Object.entries(responses)) {
+      const n = parseInt(codeStr, 10);
+      if (!Number.isNaN(n)) {
+        derived.responseCodes.push(n);
+        derived.responseCodesSet.add(n);
+        if (n >= 400) derived.errorCodes.push(n);
+      }
+    }
+
+    derived.responseCodes = Array.from(new Set(derived.responseCodes)).sort((a, b) => a - b);
+    derived.errorCodes = Array.from(new Set(derived.errorCodes)).sort((a, b) => a - b);
+
+    // Security: operation.security overrides top-level security.
+    const opSecurity =
+      operation && Array.isArray(operation.security)
+        ? operation.security
+        : openapiSpec && Array.isArray(openapiSpec.security)
+          ? openapiSpec.security
+          : undefined;
+    derived.securityPresent = Array.isArray(opSecurity) ? opSecurity.length > 0 : false;
+
+    // Query parameter inference (best-effort).
+    const params = (operation && operation.parameters) || [];
+    derived.queryParams = params
+      .map((p) => (p && p.$ref ? this.resolveJsonPointer(openapiSpec, p.$ref) : p))
+      .filter(Boolean)
+      .filter((p) => p.in === "query" && p.name)
+      .map((p) => {
+        const schema = this.resolveSchemaRefs(p.schema || {}, openapiSpec);
+        const type =
+          schema && typeof schema === "object"
+            ? schema.type || schema.format || "string"
+            : "string";
+        return { name: p.name, type };
+      });
+
+    // Request body schema inference (fields + states).
+    const requestBody = operation && operation.requestBody;
+    const requestBodyRequired = requestBody && requestBody.required === true;
+    const requestContent = requestBody && requestBody.content;
+    const requestSchema = this.extractSchemaFromContent(
+      requestContent,
+      openapiSpec,
+    );
+    if (requestSchema && typeof requestSchema === "object") {
+      const resolved = this.resolveSchemaRefs(requestSchema, openapiSpec);
+      const schemaObj = resolved && resolved.properties ? resolved : null;
+
+      const requiredList = Array.isArray(resolved.required) ? resolved.required : [];
+      const properties =
+        schemaObj && schemaObj.properties && typeof schemaObj.properties === "object"
+          ? schemaObj.properties
+          : {};
+
+      for (const [propName, propSchema] of Object.entries(properties)) {
+        const resolvedPropSchema = this.resolveSchemaRefs(propSchema, openapiSpec);
+        if (!resolvedPropSchema || typeof resolvedPropSchema !== "object") continue;
+
+        if (/status|state/i.test(propName) && Array.isArray(resolvedPropSchema.enum) && resolvedPropSchema.enum.length > 0) {
+          if (derived.inferredStates.length === 0) {
+            derived.inferredStates = resolvedPropSchema.enum.map((v) => String(v));
+          }
+        }
+
+        const schemaType = resolvedPropSchema.type || (resolvedPropSchema.format ? "string" : "string");
+        let type = schemaType;
+        if (schemaType === "integer" || schemaType === "number") type = "number";
+        if (schemaType === undefined && resolvedPropSchema.enum) type = "string";
+
+        const constraintParts = [];
+        if (requiredList.includes(propName) || requestBodyRequired) {
+          constraintParts.push("required");
+        }
+        if (resolvedPropSchema.minLength != null) constraintParts.push(`minLength=${resolvedPropSchema.minLength}`);
+        if (resolvedPropSchema.maxLength != null) constraintParts.push(`maxLength=${resolvedPropSchema.maxLength}`);
+        if (resolvedPropSchema.pattern) constraintParts.push(`pattern=${resolvedPropSchema.pattern}`);
+        if (resolvedPropSchema.format) constraintParts.push(`format=${resolvedPropSchema.format}`);
+        if (Array.isArray(resolvedPropSchema.enum) && resolvedPropSchema.enum.length > 0) {
+          constraintParts.push(`enum=${resolvedPropSchema.enum.join("|")}`);
+        }
+
+        derived.inferredFields.push({
+          name: propName,
+          type,
+          constraint: constraintParts.join(", ") || "unspecified",
+        });
+      }
+    }
+
+    // Error contract inference (best-effort).
+    // We look for schemas that have an `error` object containing `code`, `message`, and `requestId` (or `traceId`).
+    const errorFieldCandidates = new Set();
+    for (const [codeStr, resp] of Object.entries(responses)) {
+      const n = parseInt(codeStr, 10);
+      if (Number.isNaN(n) || n < 400) continue;
+      const content = resp && resp.content;
+      const schema = this.extractSchemaFromContent(content, openapiSpec);
+      if (!schema) continue;
+      const resolved = this.resolveSchemaRefs(schema, openapiSpec);
+      if (!resolved || typeof resolved !== "object") continue;
+
+      const errObj = resolved.properties && resolved.properties.error;
+      if (
+        errObj &&
+        typeof errObj === "object" &&
+        errObj.properties &&
+        errObj.properties.code &&
+        errObj.properties.message
+      ) {
+        // Only mark what we can actually see.
+        if (errObj.properties.code) errorFieldCandidates.add("error.code");
+        if (errObj.properties.message) errorFieldCandidates.add("error.message");
+        if (errObj.properties.requestId) errorFieldCandidates.add("error.requestId");
+        if (errObj.properties.traceId) errorFieldCandidates.add("error.traceId");
+      }
+    }
+    derived.errorContractFields = Array.from(errorFieldCandidates);
+
+    return derived;
+  }
+
+  enrichContextWithOpenApi(method, endpoint, context) {
+    const openapiSpecInput = context.openapiSpec;
+    if (!openapiSpecInput) {
+      return context;
+    }
+
+    const openapiWarnings = [];
+    const parsed = this.tryParseOpenApiSpec(openapiSpecInput);
+    openapiWarnings.push(...parsed.warnings);
+
+    if (!parsed.spec) {
+      context.openapi = {
+        operationFound: false,
+        securityPresent: false,
+        responseCodes: [],
+        errorCodes: [],
+        inferredFields: [],
+        inferredStates: [],
+        queryParams: [],
+        errorContractFields: [],
+      };
+      context.openapiWarnings = openapiWarnings;
+      return context;
+    }
+
+    const operationId = context.openapiOperationId || "";
+    const found = this.findOpenApiOperation(parsed.spec, method, endpoint, operationId);
+    if (!found) {
+      context.openapi = {
+        operationFound: false,
+        securityPresent: false,
+        responseCodes: [],
+        errorCodes: [],
+        inferredFields: [],
+        inferredStates: [],
+        queryParams: [],
+        errorContractFields: [],
+      };
+      openapiWarnings.push(
+        `OpenAPI spec provided, but no matching operation was found for ${method.toUpperCase()} ${endpoint}${
+          operationId ? ` (operationId=${operationId})` : ""
+        }.`,
+      );
+      context.openapiWarnings = openapiWarnings;
+      return context;
+    }
+
+    const derived = this.inferOpenApiOperationContext(parsed.spec, found.operation);
+    context.openapi = { operationFound: true, ...derived, matchedPathKey: found.matchedPathKey };
+    context.openapiWarnings = openapiWarnings;
+
+    // Merge inferred fields/states/filters/sortable into user context (only if user didn't provide them).
+    if (context.fields.length === 0 && derived.inferredFields.length > 0) {
+      context.fields = derived.inferredFields;
+    }
+    if (context.states.length === 0 && derived.inferredStates.length > 0) {
+      context.states = derived.inferredStates;
+    }
+
+    if (context.filters.length === 0 && derived.queryParams.length > 0) {
+      context.filters = derived.queryParams.map((q) => ({
+        name: q.name,
+        type: q.type,
+      }));
+    }
+
+    if (context.sortable.length === 0) {
+      const sortableNames = derived.queryParams
+        .map((q) => q.name)
+        .filter((n) => /sort|order/i.test(n));
+      if (sortableNames.length > 0) {
+        context.sortable = sortableNames;
+      }
+    }
+
+    return context;
+  }
+
+  pickStatusFromOpenApi(openapi, preferredCodes, fallback) {
+    if (!openapi || !Array.isArray(preferredCodes) || preferredCodes.length === 0) return fallback;
+    if (!openapi.responseCodesSet || !(openapi.responseCodesSet instanceof Set)) return fallback;
+    const chosen = preferredCodes.filter((c) => openapi.responseCodesSet.has(c));
+    if (!chosen || chosen.length === 0) return fallback;
+    return chosen.join("/");
   }
 
   loadConfig() {
@@ -156,6 +625,10 @@ class APITestScenarioGenerator {
         filters: additionalContext.filters || [],
         sortable: additionalContext.sortable || [],
         relations: additionalContext.relations || [],
+        openapiSpec: additionalContext.openapiSpec || "",
+        openapiOperationId: additionalContext.openapiOperationId || "",
+        openapi: additionalContext.openapi || null,
+        openapiWarnings: additionalContext.openapiWarnings || [],
       };
     }
 
@@ -167,6 +640,10 @@ class APITestScenarioGenerator {
       filters: [],
       sortable: [],
       relations: [],
+      openapiSpec: "",
+      openapiOperationId: "",
+      openapi: null,
+      openapiWarnings: [],
     };
   }
 
@@ -328,8 +805,9 @@ class APITestScenarioGenerator {
             this.createScenario({
               scenario: "Retrieve with pagination",
               testType: "Happy Path",
-              description: `GET ${endpoint}?page=1&limit=10 returns paginated results`,
-              expectedResult: "Paginated list with metadata returned",
+              description: `GET ${endpoint}?page=1&pageSize=10 returns paginated results (or equivalent page/pageSize or limit/offset parameters)`,
+              expectedResult:
+                "Paginated list with metadata returned (e.g., page, pageSize, totalItems/totalPages or equivalent pagination fields)",
               httpStatus: 200,
               testLevel: "Integration",
               priority: "Medium (M)",
@@ -444,9 +922,9 @@ class APITestScenarioGenerator {
       this.createScenario({
         scenario: "Filter and sort results",
         testType: "Query Behavior",
-        description: `GET ${endpoint} with supported filters and sort order returns deterministic results`,
+        description: `GET ${endpoint} with consistent query parameter naming (camelCase) for supported filters and sort order returns deterministic results`,
         expectedResult:
-          "Filtered and sorted resources returned with correct metadata",
+          "Filtered and sorted resources returned with correct metadata (including deterministic ordering)",
         httpStatus: 200,
         priority: "Medium (M)",
       }),
@@ -456,8 +934,9 @@ class APITestScenarioGenerator {
       this.createScenario({
         scenario: "Invalid filter field",
         testType: "Query Behavior",
-        description: `GET ${endpoint} with an unsupported filter field is rejected`,
-        expectedResult: "Validation error for unknown filter field",
+        description: `GET ${endpoint} with an unsupported filter field (unknown filter query parameter) is rejected`,
+        expectedResult:
+          "Validation error for unknown filter field with a meaningful message",
         httpStatus: 400,
       }),
     );
@@ -466,8 +945,9 @@ class APITestScenarioGenerator {
       this.createScenario({
         scenario: "Invalid sort field",
         testType: "Query Behavior",
-        description: `GET ${endpoint} with an unsupported sort field is rejected`,
-        expectedResult: "Validation error for unknown sort field",
+        description: `GET ${endpoint} with an unsupported sort field (unknown sort/order query parameter) is rejected`,
+        expectedResult:
+          "Validation error for unknown sort field with a meaningful message",
         httpStatus: 400,
       }),
     );
@@ -477,7 +957,7 @@ class APITestScenarioGenerator {
         scenario: "Invalid date range filter",
         testType: "Query Behavior",
         description: `GET ${endpoint} with an invalid date range (from > to or bad format) is rejected`,
-        expectedResult: "Validation error for date-range query",
+        expectedResult: "Validation error for date-range query with a meaningful message",
         httpStatus: 400,
       }),
     );
@@ -609,6 +1089,20 @@ class APITestScenarioGenerator {
     }
 
     if (["POST", "PUT", "PATCH"].includes(method)) {
+      if (["POST", "PUT"].includes(method)) {
+        scenarios.push(
+          this.createScenario({
+            scenario: "Payload sent via query parameters",
+            testType: "Negative",
+            description: `${method} ${endpoint} sends payload fields in query parameters (instead of request body), which should be rejected or safely ignored per API contract`,
+            expectedResult:
+              "API does not process the payload as a write; returns 400/422 (or safely ignores query payload) with a meaningful message",
+            httpStatus: "400/422",
+            priority: "Medium (M)",
+          }),
+        );
+      }
+
       scenarios.push(
         this.createScenario({
           scenario: "Malformed JSON body",
@@ -834,15 +1328,31 @@ class APITestScenarioGenerator {
     return scenarios;
   }
 
-  generateContractScenarios(method, endpoint) {
+  generateContractScenarios(method, endpoint, endpointInfo, context) {
+    const openapi = context && context.openapi ? context.openapi : null;
+    const errorCodes = openapi && Array.isArray(openapi.errorCodes) ? openapi.errorCodes : [];
+    const httpStatus = errorCodes.length > 0 ? errorCodes.join("/") : "4xx/5xx";
+
+    const errorFields =
+      openapi && Array.isArray(openapi.errorContractFields)
+        ? openapi.errorContractFields
+        : [];
+
+    const fieldHint =
+      errorFields.length > 0
+        ? ` (contract hints: ${errorFields.join(", ")})`
+        : "";
+
     return [
       this.createScenario({
         scenario: "Structured error response contract",
         testType: "Contract",
-        description: `${method} ${endpoint} error responses include fields such as error.code, error.message, and error.requestId`,
+        description: `${method} ${endpoint} error responses include structured, meaningful details such as error.code, error.message, and error.requestId (or RFC 9457 Problem Details: status/message/errors[])${fieldHint}`,
         expectedResult:
-          "Structured error payload matches the contract for representative 4xx/5xx responses",
-        httpStatus: "4xx/5xx",
+          errorFields.length > 0
+            ? "Structured error payload matches the OpenAPI contract for representative error responses and includes meaningful, field-specific messages (validate RFC 9457 status/message/errors[] when applicable)"
+            : "Structured error payload matches the contract for representative 4xx/5xx responses and includes meaningful, field-specific messages (validate RFC 9457 status/message/errors[] when applicable)",
+        httpStatus,
         priority: "High (H)",
       }),
     ];
@@ -1017,6 +1527,16 @@ class APITestScenarioGenerator {
     const context = this.normalizeContext(additionalContext);
     const warnings = [];
 
+    if (context.openapiWarnings && context.openapiWarnings.length > 0) {
+      warnings.push(...context.openapiWarnings);
+    }
+
+    if (!context.openapiSpec) {
+      warnings.push(
+        "REST API design guideline conventions were used to shape scenario wording (pagination params, camelCase query naming, meaningful error messages, and POST/PUT payload-in-body). Verify these match your API contract.",
+      );
+    }
+
     if (
       ["POST", "PUT", "PATCH"].includes(method) &&
       context.fields.length === 0
@@ -1056,9 +1576,12 @@ class APITestScenarioGenerator {
     }
 
     if (!/rbac|role|admin|customer|owner|tenant/i.test(context.rawText)) {
-      warnings.push(
-        "RBAC rules were not provided explicitly; Admin/Customer ownership checks are included as common defaults and may need adjustment.",
-      );
+      const hasOpenApiAuth = context.openapi && context.openapi.securityPresent;
+      if (!hasOpenApiAuth) {
+        warnings.push(
+          "RBAC rules were not provided explicitly; Admin/Customer ownership checks are included as common defaults and may need adjustment.",
+        );
+      }
     }
 
     return warnings;
@@ -1072,15 +1595,34 @@ class APITestScenarioGenerator {
     return warnings.map((warning) => `- ⚠️ ${warning}`).join("\n");
   }
 
+  getReferencesFileRepoPath() {
+    // The generator exists in both `.cursor/...` and `.github/...` skill copies.
+    // We emit a repo-root-relative link so the references remain valid in markdown.
+    const skillDirNorm = String(this.skillDir).replace(/\\/g, "/").toLowerCase();
+    const usesCursor = skillDirNorm.includes("/.cursor/");
+    const base = usesCursor ? ".cursor" : ".github";
+    return `${base}/skills/api-test-scenario-generator/references/rest-api-design-guidelines.md`;
+  }
+
+  getReferencesSection() {
+    const refPath = this.getReferencesFileRepoPath();
+    return `- [REST API Design guideline](${refPath})`;
+  }
+
   generateReport(method, endpoint, additionalContext = "") {
     const context = this.normalizeContext(additionalContext);
-    const scenarios = this.generateScenarios(method, endpoint, context);
-    const scenarioRows = this.formatScenarios(scenarios);
-    const warnings = this.collectWarnings(method, endpoint, context);
-    const dependencyGraph = this.generateDependencyGraph(
+    const enrichedContext = this.enrichContextWithOpenApi(
       method,
       endpoint,
       context,
+    );
+    const scenarios = this.generateScenarios(method, endpoint, enrichedContext);
+    const scenarioRows = this.formatScenarios(scenarios);
+    const warnings = this.collectWarnings(method, endpoint, enrichedContext);
+    const dependencyGraph = this.generateDependencyGraph(
+      method,
+      endpoint,
+      enrichedContext,
     );
 
     const scenarioTable = this.templates.scenarioTable.replace(
@@ -1120,6 +1662,8 @@ class APITestScenarioGenerator {
       context,
     );
 
+    const referencesSection = this.getReferencesSection();
+
     const fullReport = this.templates.fullReport
       .replace("{{METHOD}}", method)
       .replace("{{ENDPOINT}}", endpoint)
@@ -1128,6 +1672,7 @@ class APITestScenarioGenerator {
       .replace("{{SCENARIO_TABLE}}", scenarioTable)
       .replace("{{DEPENDENCY_GRAPH_SECTION}}", dependencyGraphSection)
       .replace("{{WARNINGS_SECTION}}", this.formatWarnings(warnings))
+      .replace("{{REFERENCES_SECTION}}", referencesSection)
       .replace("{{IMPLEMENTATION_TIPS}}", implementationTips);
 
     return {
@@ -1193,7 +1738,7 @@ if (require.main === module) {
 
   if (args.length < 2) {
     console.error(
-      "Usage: node generate-scenarios.js <HTTP_METHOD> <ENDPOINT> [--fields ...] [--states ...] [--transitions ...] [--filters ...] [--sortable ...] [--relations ...] [additional_context]",
+      "Usage: node generate-scenarios.js <HTTP_METHOD> <ENDPOINT> [--fields ...] [--states ...] [--transitions ...] [--filters ...] [--sortable ...] [--relations ...] [--openapiSpec PATH_OR_JSON_OR_YAML] [--openapiOperationId OPERATION_ID] [additional_context]",
     );
     console.error(
       "Example: node generate-scenarios.js POST /api/users --fields name:string:required",
