@@ -71,24 +71,75 @@ No staged changes are available to commit.
 
 #### 3a. Draft
 
-Produce **one** proposed commit message based only on the collected git changes.
+Produce **one** proposed commit message based only on the collected git changes. Follow the [Conventional Commits](https://www.conventionalcommits.org/) format:
 
-Follow these static best-practice rules:
+```text
+<type>[optional scope]: <description>
 
-- use a short subject line in imperative mood
-- describe **what changed**, not vague intent
-- keep the subject concise and specific
-- use a helpful prefix when it fits: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
-- avoid messages like `update`, `changes`, `misc fixes`, or `stuff`
+[optional body]
 
-Good examples:
+[optional footer(s)]
+```
+
+**Type** — pick the best fit:
+
+| Type | Purpose |
+| ---- | ------- |
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `style` | Formatting/style (no logic change) |
+| `refactor` | Code restructure (no feature/fix) |
+| `perf` | Performance improvement |
+| `test` | Add or update tests |
+| `build` | Build system or dependency changes |
+| `ci` | CI configuration changes |
+| `chore` | Maintenance or housekeeping |
+| `revert` | Revert a previous commit |
+
+**Optional scope** — a module or area name in parentheses:
+
+```text
+feat(auth): add JWT refresh token endpoint
+fix(parser): handle empty input gracefully
+```
+
+**Breaking changes** — use `!` after type/scope or a `BREAKING CHANGE` footer:
+
+```text
+feat!: remove deprecated /v1/users endpoint
+
+feat(api): change response envelope shape
+
+BREAKING CHANGE: `data` field renamed to `result`
+```
+
+**Issue references** — reference related issues in the footer:
+
+```text
+fix: handle null pointer in session handler
+
+Closes #123
+Refs #456
+```
+
+**Multi-line body** — add a blank line after the subject, then bullets or prose when the diff is large or context is helpful:
 
 ```text
 feat: add git commit creator skill
-fix: handle empty branch names in git helper
-docs: update README with git workflow skills
-refactor: simplify API scenario priority rules
+
+- prompt whether to stage all files
+- collect git status and staged diff summary
+- create a commit on the active branch
 ```
+
+**Rules for the subject line:**
+- imperative mood: "add" not "added", "fix" not "fixes"
+- describe **what changed**, not vague intent
+- keep it under 72 characters
+- avoid `update`, `changes`, `misc fixes`, `stuff`
+
+Never propose a commit that includes secrets (`.env`, `credentials.json`, private keys); warn the user and stop.
 
 #### 3b. Show and confirm
 
@@ -136,3 +187,7 @@ Return the exact git result after the commit command completes.
 - Build the commit message from the real diff, not from assumptions.
 - Keep the message clear and professional.
 - Do not create the commit until the user chooses **OK** for the proposed message, or **explicitly supplies** their own message after **Not OK**.
+- Never update the git config.
+- Never skip hooks (`--no-verify`) unless the user explicitly asks.
+- If a commit fails due to a pre-commit hook, fix the issue and create a **new** commit; do not amend.
+- Never commit files that likely contain secrets (`.env`, `credentials.json`, private keys); warn the user and stop.
