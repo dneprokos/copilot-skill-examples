@@ -1,9 +1,10 @@
 ---
 name: git-pr-creator
 description: >-
-  Create a pull request from the current branch to `main`. Use when the user asks
-  to open a PR, create a pull request from the current branch, or publish work
-  for review. If the branch name contains a ticket-like prefix such as
+  Create a pull request from the current branch to the core branch (`main` or
+  `develop`, whichever exists on `origin`). Use when the user asks to open a
+  PR, create a pull request from the current branch, or publish work for
+  review. If the branch name contains a ticket-like prefix such as
   `TST-2056_*` or `2056_*`, start the PR title with that prefix in square
   brackets. If a PR with the same prefix already exists, ask whether to continue.
 argument-hint: "optional PR context or base branch"
@@ -26,7 +27,7 @@ Do **not** use it for:
 - force pushing
 - merging PRs
 - reviewing PR comments
-- creating a PR from `main`
+- creating a PR from the resolved core branch (`main` or `develop`)
 
 ## Workflow
 
@@ -34,10 +35,12 @@ Do **not** use it for:
 
 Check the current local branch name first.
 
-If the current branch is `main`, stop immediately and return:
+Resolve the core base branch first (`main` preferred, then `develop`).
+
+If the current branch matches the resolved base branch, stop immediately and return:
 
 ```text
-You cannot create a pull request from the main branch with this skill.
+You cannot create a pull request from the <base-branch> branch with this skill.
 ```
 
 ### 2. Build the PR title
@@ -76,15 +79,21 @@ If the answer is `No`, stop immediately.
 
 ### 4. GitHub token precondition (non-DryRun)
 
-Before running the helper script **without** `-DryRun`, verify a GitHub token is available from **one** of:
+Before running the helper script **without** `-DryRun`, verify a GitHub token is available from this order:
 
-1. Environment variable **`GITHUB_TOKEN`** or **`GH_TOKEN`** (non-empty), **or**
-2. **`github-pr.local.json`** at the **repository root** (preferred; works the same for `.github/skills` and `.cursor/skills` workflows), with string property **`github_token`**, **or**
-3. **Legacy:** **`.github/skills/git-pr-creator/config/github-pr.local.json`** with the same property.
+1. Environment variable **`GITHUB_TOKEN`** or **`GH_TOKEN`** (non-empty),
+2. SecretManagement secret **`GitHubToken`** stored in the SecretManagement/SecretStore vault,
+3. If secret is missing and session is interactive: prompt user for token (masked) and save it as **`GitHubToken`**, then use it immediately,
+4. Legacy fallback: **`github-pr.local.json`** at the **repository root** with string property **`github_token`**,
+5. Legacy fallback: **`.github/skills/git-pr-creator/config/github-pr.local.json`** with the same property.
 
-**Precedence:** environment variables, then root `github-pr.local.json`, then the legacy skill config path.
+If SecretManagement is not installed, use the setup skill:
 
-If none provide a token for a real PR run, **stop** and tell the user to follow [README.md](README.md) (copy repo-root `github-pr.local.example.json` to `github-pr.local.json`, or set `GH_TOKEN`). **Never** commit `github-pr.local.json` or paste tokens into chat.
+```powershell
+pwsh -NoProfile -File ./.github/skills/windows-secretmanagement-setup/scripts/install-secretmanagement.ps1
+```
+
+If no source provides a token for a real PR run, **stop** and tell the user to follow [README.md](README.md). **Never** commit `github-pr.local.json` or paste tokens into chat.
 
 `-DryRun` does **not** require a token (local preview only). Duplicate-prefix checks during DryRun may still need an authenticated `gh` if they call the API.
 
@@ -111,19 +120,20 @@ pwsh -NoProfile -File ./.github/skills/git-pr-creator/scripts/create-pr.ps1
 The script will:
 
 - detect the current branch
-- block PR creation from `main`
-- require a GitHub token for non-DryRun runs (env, repo-root `github-pr.local.json`, or legacy skill config path)
+- resolve the core base branch (`main` then `develop`) when `-BaseBranch` is omitted
+- block PR creation from that resolved base branch
+- require a GitHub token for non-DryRun runs (env, SecretManagement `GitHubToken`, interactive prompt-and-save, then legacy JSON fallback)
 - ask approval before auto-installing `gh` when needed
 - keep the remote branch name the same as the local one
 - generate a title from the branch name or current changes
 - build the PR description from **commit subjects** on this branch versus the base (oldest first), not generic skill boilerplate
 - check for duplicate ticket-prefix PRs
-- create the PR against `main` by default
+- create the PR against the resolved core base branch by default
 
 ## Hard rules
 
-- Never create a PR from `main` with this skill.
-- For non-DryRun runs, never proceed without a configured token (`GITHUB_TOKEN`, `GH_TOKEN`, repo-root `github-pr.local.json`, or legacy path under `.github/skills/git-pr-creator/config/`).
+- Never create a PR from the resolved core branch (`main` or `develop`) with this skill.
+- For non-DryRun runs, never proceed without a configured token (`GITHUB_TOKEN`, `GH_TOKEN`, SecretManagement `GitHubToken`, or legacy fallback JSON paths).
 - Never commit `github-pr.local.json` or expose tokens in logs or commits.
 - If a ticket-like prefix exists, preserve it as `[PREFIX]: ...` in the title.
 - If the prefix already exists in an open PR, ask the user before continuing.

@@ -3,7 +3,8 @@ name: git-push-creator
 description: >-
   Push the current local branch to `origin` using the same branch name on the
   remote. Use when the user asks to push the current branch or publish local
-  commits. If the current branch is `main`, abort and return a safety message.
+  commits. If the current branch is the resolved core branch (`main` or
+  `develop`), abort and return a safety message.
 argument-hint: "optional push context"
 ---
 
@@ -21,7 +22,7 @@ Use it for requests like:
 
 Do **not** use it for:
 
-- pushing `main`
+- pushing the core branch (`main` or `develop`)
 - force pushing
 - deleting remote branches
 - opening pull requests
@@ -32,10 +33,12 @@ Do **not** use it for:
 
 Check the current local branch name first.
 
-If the branch is `main`, stop immediately and return:
+Resolve the core branch first (`main` preferred, then `develop`).
+
+If the branch matches that resolved core branch, stop immediately and return:
 
 ```text
-You cannot push to the main branch with this skill.
+You cannot push to the <core-branch> branch with this skill.
 ```
 
 ### 2. Use the same branch name on remote
@@ -52,7 +55,8 @@ The helper script will:
 
 - confirm the workspace is a Git repository
 - detect the current branch
-- abort if the current branch is `main`
+- resolve the core branch (`main` then `develop`)
+- abort if the current branch matches the resolved core branch
 - push to `origin/<same-branch-name>`
 - set upstream if needed
 
@@ -62,7 +66,7 @@ Do not guess success. Return the real git output after the push completes.
 
 ## Hard rules
 
-- Never push `main` with this skill.
+- Never push the resolved core branch (`main` or `develop`) with this skill.
 - Never rename the remote branch; it must match the local branch name.
 - Do not use `--force` or `--force-with-lease` unless the user explicitly requests it.
 - Return the exact git result instead of summarizing vaguely.

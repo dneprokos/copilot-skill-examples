@@ -1,11 +1,11 @@
 # Git PR Creator
 
-A GitHub Copilot skill for creating a pull request from the current branch to `main`.
+A GitHub Copilot skill for creating a pull request from the current branch to the resolved core branch (`main` or `develop`).
 
 ## What it does
 
 - detects the current local branch
-- blocks PR creation from `main`
+- blocks PR creation from the resolved core branch (`main` preferred, then `develop`)
 - keeps the same local and remote branch name
 - generates a PR title from a ticket prefix, branch suffix, or commit changes
 - builds the PR description from **commit subjects** on this branch compared to the base branch (via `git log`, oldest first)
@@ -15,16 +15,39 @@ A GitHub Copilot skill for creating a pull request from the current branch to `m
 
 Creating a PR **without** `-DryRun` requires a GitHub personal access token. The helper resolves it in this order:
 
-1. **`GITHUB_TOKEN`** or **`GH_TOKEN`** in the environment (first non-empty wins between the two env checks; both are accepted).
-2. **`github-pr.local.json`** at the **repository root** (same folder as `.git`), with a **`github_token`** string — **preferred** so one file works whether you use Copilot (`.github/skills/`) or Cursor (`.cursor/skills/`) copies of the skill.
-3. **Legacy (optional):** **`.github/skills/git-pr-creator/config/github-pr.local.json`** with the same JSON shape.
+1. **`GITHUB_TOKEN`** or **`GH_TOKEN`** in the environment.
+2. SecretManagement secret **`GitHubToken`** (recommended).
+3. If secret is missing and the session is interactive, prompt for token (masked), store it as **`GitHubToken`**, and continue.
+4. **Legacy fallback:** **`github-pr.local.json`** at the repository root.
+5. **Legacy fallback:** **`.github/skills/git-pr-creator/config/github-pr.local.json`**.
 
 The script sets **`GH_TOKEN`** for the GitHub CLI from that value. Do **not** print or log the token.
 
-### Config file setup (preferred: repo root)
+### Preferred: SecretManagement/SecretStore
+
+Install and initialize SecretManagement/SecretStore:
+
+```powershell
+pwsh -NoProfile -File ./.github/skills/windows-secretmanagement-setup/scripts/install-secretmanagement.ps1
+```
+
+Set the token manually (optional if you want to pre-seed):
+
+```powershell
+Set-Secret -Name GitHubToken -Secret '<your-github-token>'
+```
+
+Read it for validation:
+
+```powershell
+Get-Secret -Name GitHubToken -AsPlainText
+```
+
+If the token is missing when PR creation starts, the helper asks for it interactively and stores it securely.
+
+### Legacy JSON fallback setup (repo root)
 
 1. At the **repository root**, copy the committed example to the **ignored** local file:
-
    - From: `github-pr.local.example.json`
    - To: `github-pr.local.json`
 
@@ -46,7 +69,7 @@ The script sets **`GH_TOKEN`** for the GitHub CLI from that value. Do **not** pr
 }
 ```
 
-You can instead use the legacy path under `.github/skills/git-pr-creator/config/` (see `config/github-pr.local.example.json` there). Prefer the **root** file when you maintain skills in both `.github` and `.cursor`.
+You can instead use the legacy path under `.github/skills/git-pr-creator/config/` (see `config/github-pr.local.example.json` there).
 
 If a token file is ever pushed or leaked, **revoke** the token immediately in GitHub (**Settings → Developer settings → Personal access tokens**) and create a new one. Prefer a **fine-grained** token limited to this repository when possible. Root-level secrets are easy to commit by mistake; rely on `.gitignore` and review `git status` before committing.
 
@@ -67,7 +90,7 @@ If you already ran `gh auth login`, you can copy the token once into repo-root `
 gh auth token
 ```
 
-Prefer the config file or a secret manager for anything long-lived.
+Prefer SecretManagement for anything long-lived.
 
 ## Suggested prompt
 
@@ -83,7 +106,7 @@ Preview only (no token required):
 pwsh -NoProfile -File ./.github/skills/git-pr-creator/scripts/create-pr.ps1 -DryRun
 ```
 
-Create a PR (token required via env or repo-root `github-pr.local.json`, or legacy skill config path):
+Create a PR (token required via env, SecretManagement `GitHubToken`, or legacy JSON fallback):
 
 ```powershell
 pwsh -NoProfile -File ./.github/skills/git-pr-creator/scripts/create-pr.ps1
@@ -103,7 +126,8 @@ pwsh -NoProfile -File ./.github/skills/git-pr-creator/scripts/create-pr.ps1 -App
 
 ## Notes
 
-- The default base branch is `main`.
+- If `-BaseBranch` is omitted, the default base branch is resolved as `main` first, then `develop`.
 - If the remote branch does not exist yet, the helper can publish it using the same name.
 - Duplicate ticket-prefix PRs require explicit user confirmation.
-- Token file **preferred** at **repository root** (`github-pr.local.json`); legacy path `.github/skills/git-pr-creator/config/github-pr.local.json` still supported.
+- SecretManagement `GitHubToken` is the recommended token storage.
+- JSON token files are supported as legacy fallback only.

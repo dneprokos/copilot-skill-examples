@@ -1,5 +1,5 @@
 param(
-    [string]$BaseBranch = 'main',
+    [string]$BaseBranch = '',
     [switch]$AllowDuplicatePrefix,
     [switch]$ApproveInstall,
     [switch]$ApproveAuth,
@@ -45,6 +45,112 @@ function Read-GitHubTokenFromJsonFile {
     return $null
 }
 
+function ConvertFrom-SecureStringPlain {
+    param(
+        [Parameter(Mandatory)]
+        [System.Security.SecureString]$SecureString
+    )
+
+    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
+    try {
+        return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) | Out-Null
+    }
+}
+
+function Get-GitHubTokenSecretName {
+    return 'GitHubToken'
+}
+
+function Test-SecretManagementAvailable {
+    $getSecret = Get-Command Get-Secret -ErrorAction SilentlyContinue
+    $setSecret = Get-Command Set-Secret -ErrorAction SilentlyContinue
+    return ($null -ne $getSecret -and $null -ne $setSecret)
+}
+
+function Test-IsInteractiveSession {
+    try {
+        return [Environment]::UserInteractive
+    }
+    catch {
+        return $false
+    }
+}
+
+function Read-GitHubTokenFromSecretManagement {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SecretName
+    )
+
+    if (-not (Test-SecretManagementAvailable)) {
+        return $null
+    }
+
+    try {
+        $secret = Get-Secret -Name $SecretName -AsPlainText -ErrorAction Stop
+        if ($secret -is [string] -and -not [string]::IsNullOrWhiteSpace($secret)) {
+            return $secret.Trim()
+        }
+    }
+    catch {
+        return $null
+    }
+
+    return $null
+}
+
+function Prompt-AndStoreGitHubToken {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SecretName
+    )
+
+    if (-not (Test-SecretManagementAvailable)) {
+        return $null
+    }
+
+    if (-not (Test-IsInteractiveSession)) {
+        return $null
+    }
+
+    Write-Output "No GitHub token found in SecretManagement secret '$SecretName'."
+    Write-Output 'Enter a token to store it securely in the SecretManagement/SecretStore vault.'
+
+    try {
+        $secureToken = Read-Host 'GitHub token' -AsSecureString
+    }
+    catch {
+        return $null
+    }
+
+    if ($null -eq $secureToken -or $secureToken.Length -eq 0) {
+        return $null
+    }
+
+    $plainToken = ConvertFrom-SecureStringPlain -SecureString $secureToken
+    try {
+        if ([string]::IsNullOrWhiteSpace($plainToken)) {
+            return $null
+        }
+
+        Set-Secret -Name $SecretName -Secret $plainToken -ErrorAction Stop
+        Write-Output "Stored token in SecretManagement as '$SecretName'."
+        return $plainToken.Trim()
+    }
+    catch {
+        Write-Output "Failed to save token to SecretManagement secret '$SecretName'."
+        return $null
+    }
+    finally {
+        if ($null -ne $plainToken) {
+            $plainToken = $null
+        }
+    }
+}
+
 function Resolve-GitHubToken {
     param(
         [Parameter(Mandatory)]
@@ -60,6 +166,30 @@ function Resolve-GitHubToken {
         return $fromEnv.Trim()
     }
 
+    $secretName = Get-GitHubTokenSecretName
+    $fromSecret = Read-GitHubTokenFromSecretManagement -SecretName $secretName
+    if (-not [string]::IsNullOrWhiteSpace($fromSecret)) {
+        return $fromSecret
+    }
+
+    # Use active gh CLI keyring auth before falling back to legacy JSON files.
+    # This covers the common case where the user is already logged in via `gh auth login`
+    # but hasn't configured SecretManagement or set env vars.
+    if (Get-Command gh -ErrorAction SilentlyContinue) {
+        & gh auth status 1>$null 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $ghCliToken = & gh auth token 2>$null
+            if (-not [string]::IsNullOrWhiteSpace($ghCliToken)) {
+                return $ghCliToken.Trim()
+            }
+        }
+    }
+
+    $promptedToken = Prompt-AndStoreGitHubToken -SecretName $secretName
+    if (-not [string]::IsNullOrWhiteSpace($promptedToken)) {
+        return $promptedToken
+    }
+
     $rootConfig = Join-Path $RepoRoot 'github-pr.local.json'
     $fromRoot = Read-GitHubTokenFromJsonFile -Path $rootConfig
     if (-not [string]::IsNullOrWhiteSpace($fromRoot)) {
@@ -68,6 +198,18 @@ function Resolve-GitHubToken {
 
     $legacyConfig = Join-Path $RepoRoot '.github/skills/git-pr-creator/config/github-pr.local.json'
     return Read-GitHubTokenFromJsonFile -Path $legacyConfig
+}
+
+function Resolve-CoreBranch {
+    $candidates = @('main', 'develop')
+    foreach ($branch in $candidates) {
+        & git ls-remote --exit-code --heads origin $branch *> $null
+        if ($?) {
+            return $branch
+        }
+    }
+
+    return 'main'
 }
 
 function Invoke-Git {
@@ -219,7 +361,7 @@ function Ensure-GitHubCliReady {
 
     if (-not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
         if (-not (Test-GitHubCliAuthenticated)) {
-            Exit-WithMessage -Message 'GitHub CLI could not authenticate with the configured token. Verify GITHUB_TOKEN or GH_TOKEN, or github-pr.local.json at repo root (see .github/skills/git-pr-creator/README.md).'
+            Exit-WithMessage -Message 'GitHub CLI could not authenticate with the configured token. Verify GITHUB_TOKEN or GH_TOKEN, SecretManagement secret GitHubToken, or github-pr.local.json at repo root (see .github/skills/git-pr-creator/README.md).'
         }
 
         return
@@ -388,16 +530,44 @@ function Get-ProposedPrTitle {
     return "[$prefix]: $summary"
 }
 
+function Resolve-GhRepoSlug {
+    $remoteUrl = & git remote get-url origin 2>$null
+    if ([string]::IsNullOrWhiteSpace($remoteUrl)) {
+        return $null
+    }
+
+    $remoteUrl = $remoteUrl.Trim()
+
+    # HTTPS: https://github.com/owner/repo.git
+    if ($remoteUrl -match 'https?://[^/]+/(?<slug>[^/]+/[^/]+?)(\.git)?$') {
+        return $Matches['slug']
+    }
+
+    # SSH: git@github.com:owner/repo.git
+    if ($remoteUrl -match '[^@]+@[^:]+:(?<slug>[^/]+/[^/]+?)(\.git)?$') {
+        return $Matches['slug']
+    }
+
+    return $null
+}
+
 function Get-OpenPullRequestsByPrefix {
     param(
-        [string]$Prefix
+        [string]$Prefix,
+        [string]$RepoSlug
     )
 
     if ([string]::IsNullOrWhiteSpace($Prefix)) {
         return @()
     }
 
-    $json = Invoke-GitHub -Arguments @('pr', 'list', '--state', 'open', '--limit', '100', '--json', 'number,title,url')
+    $args = @('pr', 'list', '--state', 'open', '--limit', '100', '--json', 'number,title,url')
+    if (-not [string]::IsNullOrWhiteSpace($RepoSlug)) {
+        $args += '--repo'
+        $args += $RepoSlug
+    }
+
+    $json = Invoke-GitHub -Arguments $args
     if ([string]::IsNullOrWhiteSpace($json)) {
         return @()
     }
@@ -485,13 +655,17 @@ if (-not $repoLookupSucceeded -or [string]::IsNullOrWhiteSpace($repoRoot)) {
 $repoRoot = $repoRoot.Trim()
 Push-Location $repoRoot
 try {
+    if ([string]::IsNullOrWhiteSpace($BaseBranch)) {
+        $BaseBranch = Resolve-CoreBranch
+    }
+
     $currentBranch = (Invoke-Git -Arguments @('branch', '--show-current')).Trim()
     if ([string]::IsNullOrWhiteSpace($currentBranch)) {
         Exit-WithMessage -Message 'Unable to determine the current branch.'
     }
 
-    if ($currentBranch -eq 'main') {
-        Exit-WithMessage -Message 'You cannot create a pull request from the main branch with this skill.'
+    if ($currentBranch -eq $BaseBranch) {
+        Exit-WithMessage -Message "You cannot create a pull request from the $BaseBranch branch with this skill."
     }
 
     if (-not $DryRun) {
@@ -500,7 +674,13 @@ try {
             Exit-WithMessage -Message @'
 GitHub token required for PR operations (non-DryRun).
 
-Set environment variable GITHUB_TOKEN or GH_TOKEN, or create (preferred, repo root):
+Set environment variable GITHUB_TOKEN or GH_TOKEN, or configure SecretManagement secret:
+    GitHubToken
+
+If SecretManagement is unavailable, install it with:
+    ./.github/skills/windows-secretmanagement-setup/scripts/install-secretmanagement.ps1
+
+Legacy fallback (repo root):
   github-pr.local.json
 with a string property "github_token".
 
@@ -514,6 +694,8 @@ Do not commit github-pr.local.json. See .github/skills/git-pr-creator/README.md 
 
         $env:GH_TOKEN = $resolvedToken
     }
+
+    $ghRepoSlug = Resolve-GhRepoSlug
 
     $prTitle = Get-ProposedPrTitle -CurrentBranch $currentBranch -BaseBranch $BaseBranch
     $ticketInfo = Get-BranchTicketInfo -BranchName $currentBranch
@@ -530,7 +712,7 @@ Do not commit github-pr.local.json. See .github/skills/git-pr-creator/README.md 
 
         if ($ghAvailable) {
             try {
-                $duplicatePullRequests = @(Get-OpenPullRequestsByPrefix -Prefix $prefix)
+                $duplicatePullRequests = @(Get-OpenPullRequestsByPrefix -Prefix $prefix -RepoSlug $ghRepoSlug)
             }
             catch {
                 if ($DryRun) {
@@ -600,7 +782,13 @@ Do not commit github-pr.local.json. See .github/skills/git-pr-creator/README.md 
         Invoke-Git -Arguments @('push', 'origin', $currentBranch) | Out-Null
     }
 
-    $prResult = Invoke-GitHub -Arguments @('pr', 'create', '--base', $BaseBranch, '--head', $currentBranch, '--title', $prTitle, '--body', $prBody)
+    $prCreateArgs = @('pr', 'create', '--base', $BaseBranch, '--head', $currentBranch, '--title', $prTitle, '--body', $prBody)
+    if (-not [string]::IsNullOrWhiteSpace($ghRepoSlug)) {
+        $prCreateArgs += '--repo'
+        $prCreateArgs += $ghRepoSlug
+    }
+
+    $prResult = Invoke-GitHub -Arguments $prCreateArgs
     Write-Output $prResult
 }
 finally {

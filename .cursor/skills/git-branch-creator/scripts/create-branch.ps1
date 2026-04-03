@@ -1,6 +1,6 @@
 param(
     [string]$BranchName,
-    [string]$BaseBranch = "main",
+    [string]$BaseBranch = '',
     [switch]$DryRun
 )
 
@@ -60,6 +60,18 @@ function Switch-Branch {
     }
 }
 
+function Resolve-CoreBranch {
+    $candidates = @('main', 'develop')
+    foreach ($branch in $candidates) {
+        & git ls-remote --exit-code --heads origin $branch *> $null
+        if ($?) {
+            return $branch
+        }
+    }
+
+    return 'main'
+}
+
 if ([string]::IsNullOrWhiteSpace($BranchName)) {
     Exit-WithMessage -Message 'A new branch name should be specified for this skill.'
 }
@@ -79,6 +91,10 @@ $repoRoot = $repoRoot.Trim()
 
 Push-Location $repoRoot
 try {
+    if ([string]::IsNullOrWhiteSpace($BaseBranch)) {
+        $BaseBranch = Resolve-CoreBranch
+    }
+
     Write-Output 'Fetching latest changes from origin...'
     Invoke-Git -Arguments @('fetch', '--prune', 'origin') | Out-Null
 

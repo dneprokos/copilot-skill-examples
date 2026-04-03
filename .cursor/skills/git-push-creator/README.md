@@ -5,7 +5,7 @@ A GitHub Copilot skill for pushing the current local branch to `origin` using th
 ## What it does
 
 - detects the current branch
-- blocks pushes from `main`
+- blocks pushes from the resolved core branch (`main` preferred, then `develop`)
 - pushes to `origin/<same-branch-name>`
 - sets upstream automatically when needed
 
@@ -23,10 +23,10 @@ pwsh -NoProfile -File ./.github/skills/git-push-creator/scripts/push-branch.ps1
 
 ### Safety behavior
 
-If the current branch is `main`, the script stops with:
+If the current branch is the resolved core branch, the script stops with:
 
 ```text
-You cannot push to the main branch with this skill.
+You cannot push to the <core-branch> branch with this skill.
 ```
 
 ## Notes

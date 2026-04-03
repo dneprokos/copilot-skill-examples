@@ -1,10 +1,10 @@
 ---
 name: git-branch-creator
 description: >-
-  Create a new Git branch from the latest `main` branch. Use when the user asks
-  to create a new branch, start a feature branch, or checkout a working branch.
-  Requires the new branch name; if it is missing, return a message asking for it
-  and stop.
+  Create a new Git branch from the latest core branch (`main` or `develop`,
+  whichever is available). Use when the user asks to create a new branch, start
+  a feature branch, or checkout a working branch. Requires the new branch name;
+  if it is missing, return a message asking for it and stop.
 argument-hint: "new-branch-name [optional base branch]"
 ---
 
@@ -43,7 +43,7 @@ Then stop the skill execution.
 ### 2. Ensure the repository is ready
 
 - Confirm the workspace is inside a Git repository.
-- Use `main` as the default base branch unless the user clearly requests another base.
+- Auto-detect the core branch (`main` preferred, then `develop`) unless the user clearly requests another base.
 - If not already on the base branch, switch to it first.
 
 ### 3. Update the base branch
@@ -57,7 +57,7 @@ pwsh -NoProfile -File ./.github/skills/git-branch-creator/scripts/create-branch.
 The script will:
 
 - fetch from `origin`
-- check whether local `main` is behind `origin/main`
+- check whether the selected base branch is behind `origin/<base>`
 - pull with `--ff-only` if updates are needed
 - stop if the requested branch already exists
 
