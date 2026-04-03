@@ -33,6 +33,18 @@ function Invoke-Git {
     return ($output | Out-String).TrimEnd()
 }
 
+function Resolve-CoreBranch {
+    $candidates = @('main', 'develop')
+    foreach ($branch in $candidates) {
+        & git ls-remote --exit-code --heads origin $branch *> $null
+        if ($?) {
+            return $branch
+        }
+    }
+
+    return 'main'
+}
+
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Exit-WithMessage -Message 'Git is not available in this environment.'
 }
@@ -48,13 +60,15 @@ $repoRoot = $repoRoot.Trim()
 
 Push-Location $repoRoot
 try {
+    $coreBranch = Resolve-CoreBranch
+
     $currentBranch = (Invoke-Git -Arguments @('branch', '--show-current')).Trim()
     if ([string]::IsNullOrWhiteSpace($currentBranch)) {
         Exit-WithMessage -Message 'Unable to determine the current branch.'
     }
 
-    if ($currentBranch -eq 'main') {
-        Exit-WithMessage -Message 'You cannot push to the main branch with this skill.'
+    if ($currentBranch -eq $coreBranch) {
+        Exit-WithMessage -Message "You cannot push to the $coreBranch branch with this skill."
     }
 
     if ($DryRun) {

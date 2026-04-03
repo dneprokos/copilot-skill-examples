@@ -14,6 +14,7 @@ Each skill in this repository targets a specific workflow:
 | Skill                                                                        | Purpose                                                                            | Contents                                    |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------- |
 | [`api-test-scenario-generator`](.github/skills/api-test-scenario-generator/) | Generates structured REST API test scenarios with boundary and validation coverage | `SKILL.md`, templates, config, script       |
+| [`rest-api-design`](.github/skills/rest-api-design/)                         | Designs and reviews REST APIs: paths, HTTP semantics, pagination, versioning, errors, OpenAPI | `SKILL.md`, README, `references/`           |
 | [`git-branch-creator`](.github/skills/git-branch-creator/)                   | Creates a new Git branch after checking that `main` is ready and up to date        | `SKILL.md`, README, script                  |
 | [`git-commit-creator`](.github/skills/git-commit-creator/)                   | Creates a commit on the current branch from collected git changes                  | `SKILL.md`, README, references, script      |
 | [`git-pr-creator`](.github/skills/git-pr-creator/)                           | Creates a pull request from the current branch and handles ticket-style PR titles  | `SKILL.md`, README, references, script      |
@@ -23,6 +24,7 @@ Each skill in this repository targets a specific workflow:
 | [`readme-polisher`](.github/skills/readme-polisher/)                         | Helps draft or improve a repository `README.md` using real project evidence        | `SKILL.md`, references, assets, scan script |
 | [`token-usage-reporting`](.github/skills/token-usage-reporting/)             | Produces day/week/month token usage reports in table format                        | `SKILL.md`, config, template, script        |
 | [`jira-mcp-assistant`](.github/skills/jira-mcp-assistant/)                   | Jira Cloud JQL and backlog-style lists via Atlassian MCP (read-first; extend for writes) | `SKILL.md`, `references/`              |
+| [`skill-creator`](.github/skills/skill-creator/)                             | Create, test, and iteratively improve agent skills (from [anthropics/skills](https://github.com/anthropics/skills); see [skills.sh](https://skills.sh/anthropics/skills/skill-creator)) | `SKILL.md`, `agents/`, `scripts/`, `eval-viewer/`, `assets/`, `references/` |
 
 ## Getting Started
 
@@ -43,6 +45,7 @@ cd copilot-skill-examples
 ```text
 Improve this repository README using the readme-polisher skill.
 Generate API test scenarios for POST /api/users.
+Review these REST endpoints using the rest-api-design skill (paste OpenAPI or routes).
 Create a new branch named feature/add-login-flow.
 Commit the current branch using the git-commit-creator skill.
 Push the current branch using the git-push-creator skill.
@@ -51,11 +54,14 @@ Run the git-workflow-orchestrator to ship my branch (branch, commit, push, PR).
 Create a token usage report for this week.
 Summarize these meeting notes using the meeting-notes-summarizer skill (paste notes below).
 List Jira backlog issues for project SCRUM using the jira-mcp-assistant skill (Atlassian MCP must be connected).
+Help me draft and evaluate a new agent skill using the skill-creator skill.
 ```
 
 > Exact invocation style can vary by Copilot surface, but clear natural-language prompts work well.
 
 This repository also mirrors the same skill folders under [`.cursor/skills/`](.cursor/skills/) for Cursor Agent Skills; copy from either location depending on your editor.
+
+**`skill-creator` (Anthropic):** use [`.github/skills/skill-creator/`](.github/skills/skill-creator/) for Copilot-style layouts and [`.cursor/skills/skill-creator/`](.cursor/skills/skill-creator/) for Cursor; the contents are the same—keep both in sync when you update.
 
 ## Jira skills and Atlassian MCP
 
@@ -93,6 +99,7 @@ copilot-skill-examples/
 ├── .github/
 │   └── skills/
 │       ├── api-test-scenario-generator/
+│       ├── rest-api-design/
 │       ├── git-branch-creator/
 │       ├── git-commit-creator/
 │       ├── git-pr-creator/
@@ -101,7 +108,8 @@ copilot-skill-examples/
 │       ├── meeting-notes-summarizer/
 │       ├── readme-polisher/
 │       ├── token-usage-reporting/
-│       └── jira-mcp-assistant/
+│       ├── jira-mcp-assistant/
+│       └── skill-creator/
 ├── .cursor/
 │   └── skills/    # Cursor Agent copy of the same skills (keep in sync when contributing)
 ├── README.md

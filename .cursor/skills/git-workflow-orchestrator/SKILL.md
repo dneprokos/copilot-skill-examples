@@ -23,7 +23,7 @@ Use it for requests like:
 Do **not** use it for:
 
 - rewriting history, force push, or merge (use explicit user request outside these skills)
-- operations on `main` as the branch to push (push-creator blocks `main`)
+- operations on the resolved core branch (`main` or `develop`) as the branch to push (push-creator blocks it)
 
 ## GitHub token (non-DryRun)
 
@@ -39,18 +39,18 @@ Opening a PR needs a GitHub token with the **same resolution** as **git-pr-creat
 
 Run each underlying skill **in order**. After every phase, state **SUCCESS** or **FAILED** and paste relevant script output. **Stop** on first failure.
 
-1. **Phase 1 — Branch** — Follow **git-branch-creator** (staging question N/A; use its script with the requested branch name).  
-   - **Success:** `create-branch.ps1` exits 0, or user is already on the intended branch and you document **SKIPPED** with reason.  
+1. **Phase 1 — Branch** — Follow **git-branch-creator** (staging question N/A; use its script with the requested branch name).
+   - **Success:** `create-branch.ps1` exits 0, or user is already on the intended branch and you document **SKIPPED** with reason.
    - **Skip:** If the user explicitly says they are already on the correct branch and must not create a new one, mark Phase 1 **SKIPPED**.
 
-2. **Phase 2 — Commit** — Follow **git-commit-creator** (staging prompt, preview, proposed message **OK / Not OK**, then commit).  
-   - **Success:** commit completes and working tree has no unintended uncommitted requirement for push (report `git status --short` if ambiguous).  
+2. **Phase 2 — Commit** — Follow **git-commit-creator** (staging prompt, preview, proposed message **OK / Not OK**, then commit).
+   - **Success:** commit completes and working tree has no unintended uncommitted requirement for push (report `git status --short` if ambiguous).
    - Do **not** use the orchestrator script for this path; preserve message approval.
 
-3. **Phase 3 — Push** — Follow **git-push-creator** (`push-branch.ps1`).  
+3. **Phase 3 — Push** — Follow **git-push-creator** (`push-branch.ps1`).
    - **Success:** exit code 0; capture **exact** git output.
 
-4. **Phase 4 — PR** — Follow **git-pr-creator** (`create-pr.ps1`).  
+4. **Phase 4 — PR** — Follow **git-pr-creator** (`create-pr.ps1`).
    - **Success:** exit code 0; capture **exact** output including the **PR URL** (usually printed by `gh pr create`).
 
 ### B. Script-driven (non-interactive commit)
@@ -62,15 +62,17 @@ pwsh -NoProfile -File ./.github/skills/git-workflow-orchestrator/scripts/run-git
   -BranchName "<name>" `
   -CommitMessage "<message>" `
   [-SkipBranch] `
-  [-BaseBranch main] `
-  [-PrBase main] `
+   [-BaseBranch <branch>] `
+   [-PrBase <branch>] `
   [-ApproveInstall] [-ApproveAuth] `
   [-AllowDuplicatePrefix] `
   [-DryRun]
 ```
 
-- **`-CommitMessage`** is required (stages all changes and commits in one step).  
-- **`-SkipBranch`** omits Phase 1 (use when already on the target branch).  
+- **`-CommitMessage`** is required (stages all changes and commits in one step).
+- **`-SkipBranch`** omits Phase 1 (use when already on the target branch).
+- If `-BaseBranch` is omitted, the script auto-detects the core branch (`main` preferred, then `develop`).
+- If `-PrBase` is omitted, it defaults to the resolved `-BaseBranch` value.
 - Forward **`-ApproveInstall`** / **`-ApproveAuth`** for headless `gh` setup when needed.
 
 Phase banners and subprocess output use the host stream so they stay visible when the script is invoked from tools that assign function output. On success, the script also emits **`PR_URL: <url>`** on the success stream for redirection or piping.
@@ -99,4 +101,4 @@ Use **FAILED** and stop populating later phases if a step errors. Include a shor
 - Use existing scripts under `.github/skills/*/scripts/`; do not reimplement git operations in the orchestrator narrative.
 - Treat **exit code 0** as phase success for scripted steps; non-zero means **FAILED**.
 - Return the **PR link exactly** as printed; do not guess URLs.
-- Never push from `main` via this workflow (push-creator will refuse; report FAILED if attempted).
+- Never push from the resolved core branch (`main` or `develop`) via this workflow (push-creator will refuse; report FAILED if attempted).

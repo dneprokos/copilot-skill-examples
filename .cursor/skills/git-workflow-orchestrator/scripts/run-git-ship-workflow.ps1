@@ -3,8 +3,8 @@ param(
     [switch]$SkipBranch,
     [Parameter(Mandatory)]
     [string]$CommitMessage,
-    [string]$BaseBranch = 'main',
-    [string]$PrBase = 'main',
+    [string]$BaseBranch = '',
+    [string]$PrBase = '',
     [switch]$ApproveInstall,
     [switch]$ApproveAuth,
     [switch]$AllowDuplicatePrefix,
@@ -65,7 +65,7 @@ function Get-PrUrlFromOutput {
     return $matches[$matches.Count - 1].Value
 }
 
-# Keep in sync with create-pr.ps1: Read-GitHubTokenFromJsonFile + Resolve-GitHubToken
+# Keep in sync with create-pr.ps1: token helper functions + Resolve-GitHubToken
 function Read-GitHubTokenFromJsonFile {
     param(
         [Parameter(Mandatory)]
@@ -91,6 +91,112 @@ function Read-GitHubTokenFromJsonFile {
     return $null
 }
 
+function ConvertFrom-SecureStringPlain {
+    param(
+        [Parameter(Mandatory)]
+        [System.Security.SecureString]$SecureString
+    )
+
+    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
+    try {
+        return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) | Out-Null
+    }
+}
+
+function Get-GitHubTokenSecretName {
+    return 'GitHubToken'
+}
+
+function Test-SecretManagementAvailable {
+    $getSecret = Get-Command Get-Secret -ErrorAction SilentlyContinue
+    $setSecret = Get-Command Set-Secret -ErrorAction SilentlyContinue
+    return ($null -ne $getSecret -and $null -ne $setSecret)
+}
+
+function Test-IsInteractiveSession {
+    try {
+        return [Environment]::UserInteractive
+    }
+    catch {
+        return $false
+    }
+}
+
+function Read-GitHubTokenFromSecretManagement {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SecretName
+    )
+
+    if (-not (Test-SecretManagementAvailable)) {
+        return $null
+    }
+
+    try {
+        $secret = Get-Secret -Name $SecretName -AsPlainText -ErrorAction Stop
+        if ($secret -is [string] -and -not [string]::IsNullOrWhiteSpace($secret)) {
+            return $secret.Trim()
+        }
+    }
+    catch {
+        return $null
+    }
+
+    return $null
+}
+
+function Prompt-AndStoreGitHubToken {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SecretName
+    )
+
+    if (-not (Test-SecretManagementAvailable)) {
+        return $null
+    }
+
+    if (-not (Test-IsInteractiveSession)) {
+        return $null
+    }
+
+    Write-Host "No GitHub token found in SecretManagement secret '$SecretName'."
+    Write-Host 'Enter a token to store it securely in the SecretManagement/SecretStore vault.'
+
+    try {
+        $secureToken = Read-Host 'GitHub token' -AsSecureString
+    }
+    catch {
+        return $null
+    }
+
+    if ($null -eq $secureToken -or $secureToken.Length -eq 0) {
+        return $null
+    }
+
+    $plainToken = ConvertFrom-SecureStringPlain -SecureString $secureToken
+    try {
+        if ([string]::IsNullOrWhiteSpace($plainToken)) {
+            return $null
+        }
+
+        Set-Secret -Name $SecretName -Secret $plainToken -ErrorAction Stop
+        Write-Host "Stored token in SecretManagement as '$SecretName'."
+        return $plainToken.Trim()
+    }
+    catch {
+        Write-Host "Failed to save token to SecretManagement secret '$SecretName'."
+        return $null
+    }
+    finally {
+        if ($null -ne $plainToken) {
+            $plainToken = $null
+        }
+    }
+}
+
 function Resolve-GitHubTokenForWorkflow {
     param(
         [Parameter(Mandatory)]
@@ -106,6 +212,28 @@ function Resolve-GitHubTokenForWorkflow {
         return $fromEnv.Trim()
     }
 
+    $secretName = Get-GitHubTokenSecretName
+    $fromSecret = Read-GitHubTokenFromSecretManagement -SecretName $secretName
+    if (-not [string]::IsNullOrWhiteSpace($fromSecret)) {
+        return $fromSecret
+    }
+
+    # Use active gh CLI keyring auth before falling back to legacy JSON files.
+    if (Get-Command gh -ErrorAction SilentlyContinue) {
+        & gh auth status 1>$null 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $ghCliToken = & gh auth token 2>$null
+            if (-not [string]::IsNullOrWhiteSpace($ghCliToken)) {
+                return $ghCliToken.Trim()
+            }
+        }
+    }
+
+    $promptedToken = Prompt-AndStoreGitHubToken -SecretName $secretName
+    if (-not [string]::IsNullOrWhiteSpace($promptedToken)) {
+        return $promptedToken
+    }
+
     $rootConfig = Join-Path $RepoRoot 'github-pr.local.json'
     $fromRoot = Read-GitHubTokenFromJsonFile -Path $rootConfig
     if (-not [string]::IsNullOrWhiteSpace($fromRoot)) {
@@ -114,6 +242,18 @@ function Resolve-GitHubTokenForWorkflow {
 
     $legacyConfig = Join-Path $RepoRoot '.github/skills/git-pr-creator/config/github-pr.local.json'
     return Read-GitHubTokenFromJsonFile -Path $legacyConfig
+}
+
+function Resolve-CoreBranch {
+    $candidates = @('main', 'develop')
+    foreach ($branch in $candidates) {
+        & git ls-remote --exit-code --heads origin $branch *> $null
+        if ($?) {
+            return $branch
+        }
+    }
+
+    return 'main'
 }
 
 if (-not $SkipBranch -and [string]::IsNullOrWhiteSpace($BranchName)) {
@@ -140,6 +280,14 @@ if (-not $? -or [string]::IsNullOrWhiteSpace($repoRootOutput)) {
 $repoRoot = (($repoRootOutput | Select-Object -First 1) | Out-String).Trim()
 $skillsRoot = Join-Path $repoRoot '.github/skills'
 
+if ([string]::IsNullOrWhiteSpace($BaseBranch)) {
+    $BaseBranch = Resolve-CoreBranch
+}
+
+if ([string]::IsNullOrWhiteSpace($PrBase)) {
+    $PrBase = $BaseBranch
+}
+
 $branchScript = Join-Path $skillsRoot 'git-branch-creator/scripts/create-branch.ps1'
 $commitScript = Join-Path $skillsRoot 'git-commit-creator/scripts/create-commit.ps1'
 $pushScript = Join-Path $skillsRoot 'git-push-creator/scripts/push-branch.ps1'
@@ -158,7 +306,12 @@ if (-not $DryRun) {
         Write-Host @'
 GitHub token required before ship workflow (non-DryRun).
 
-Set GITHUB_TOKEN or GH_TOKEN, or create repo-root github-pr.local.json (preferred),
+Set GITHUB_TOKEN or GH_TOKEN, or configure SecretManagement secret GitHubToken.
+
+If SecretManagement is unavailable, install it with:
+    ./.github/skills/windows-secretmanagement-setup/scripts/install-secretmanagement.ps1
+
+Legacy fallback: create repo-root github-pr.local.json,
 or legacy .github/skills/git-pr-creator/config/github-pr.local.json.
 
 See .github/skills/git-pr-creator/README.md
